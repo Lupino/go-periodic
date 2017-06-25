@@ -1,7 +1,6 @@
 package periodic
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/Lupino/periodic/driver"
 	"github.com/Lupino/periodic/protocol"
@@ -129,18 +128,10 @@ func (c *Client) RemoveJob(funcName, name string) error {
 
 // Dump data from periodic server.
 func (c *Client) Dump(w io.Writer) error {
-	agent := c.bc.NewAgent()
+	agent := c.bc.NewDumpAgent(w)
 	defer c.bc.RemoveAgent(agent.ID)
-	agent.Send(protocol.DUMP, nil)
-	for {
-		_, payload, _ := agent.Receive()
-		if bytes.Equal(payload, []byte("EOF")) {
-			break
-		}
-		header, _ := protocol.MakeHeader(payload)
-		w.Write(header)
-		w.Write(payload)
-	}
+	agent.Send()
+	agent.Wait()
 	return nil
 }
 

@@ -11,7 +11,7 @@ import (
 
 // BaseClient defined base client.
 type BaseClient struct {
-	agents map[string]*Agent
+	agents map[string]Feeder
 	conn   protocol.Conn
 	locker *sync.RWMutex
 	alive  bool
@@ -20,7 +20,7 @@ type BaseClient struct {
 // NewBaseClient create a base client.
 func NewBaseClient(conn net.Conn, clientType protocol.ClientType) *BaseClient {
 	c := new(BaseClient)
-	c.agents = make(map[string]*Agent)
+	c.agents = make(map[string]Feeder)
 	c.alive = true
 	c.locker = new(sync.RWMutex)
 	c.conn = protocol.NewClientConn(conn)
@@ -44,6 +44,19 @@ func (c *BaseClient) NewAgent() *Agent {
 		log.Fatal(err)
 	}
 	agent := NewAgent(c.conn, []byte(agentID))
+	c.agents[agentID] = agent
+	return agent
+}
+
+// NewDumpAgent create a new agent with an shortid
+func (c *BaseClient) NewDumpAgent(w io.Writer) *DumpAgent {
+	c.locker.Lock()
+	defer c.locker.Unlock()
+	agentID, err := shortid.Generate()
+	if err != nil {
+		log.Fatal(err)
+	}
+	agent := NewDumpAgent(c.conn, []byte(agentID), w)
 	c.agents[agentID] = agent
 	return agent
 }
