@@ -25,6 +25,7 @@ func NewBaseClient(conn net.Conn, clientType protocol.ClientType) *BaseClient {
 	c.locker = new(sync.RWMutex)
 	c.conn = protocol.NewClientConn(conn)
 	c.conn.Send(clientType.Bytes())
+	c.conn.Receive()
 	return c
 }
 
