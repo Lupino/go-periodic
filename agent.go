@@ -2,7 +2,7 @@ package periodic
 
 import (
 	"bytes"
-	"github.com/Lupino/periodic/protocol"
+	"github.com/Lupino/go-periodic/protocol"
 	"io"
 	"sync"
 )

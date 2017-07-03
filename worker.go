@@ -2,7 +2,7 @@ package periodic
 
 import (
 	"fmt"
-	"github.com/Lupino/periodic/protocol"
+	"github.com/Lupino/go-periodic/protocol"
 	"log"
 	"net"
 	"strings"

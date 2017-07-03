@@ -2,8 +2,8 @@ package periodic
 
 import (
 	"fmt"
-	"github.com/Lupino/periodic/driver"
-	"github.com/Lupino/periodic/protocol"
+	"github.com/Lupino/go-periodic/protocol"
+	"github.com/Lupino/go-periodic/types"
 	"io"
 	"net"
 	"sort"
@@ -54,7 +54,7 @@ func (c *Client) Ping() bool {
 func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error {
 	agent := c.bc.NewAgent()
 	defer c.bc.RemoveAgent(agent.ID)
-	job := driver.Job{
+	job := types.Job{
 		Func: funcName,
 		Name: name,
 	}
@@ -64,10 +64,6 @@ func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error 
 	if schedat, ok := opts["schedat"]; ok {
 		i64, _ := strconv.ParseInt(schedat, 10, 64)
 		job.SchedAt = i64
-	}
-	if timeout, ok := opts["timeout"]; ok {
-		i64, _ := strconv.ParseInt(timeout, 10, 64)
-		job.Timeout = i64
 	}
 	agent.Send(protocol.SUBMITJOB, job.Bytes())
 	ret, data, _ := agent.Receive()
@@ -114,7 +110,7 @@ func (c *Client) DropFunc(Func string) error {
 func (c *Client) RemoveJob(funcName, name string) error {
 	agent := c.bc.NewAgent()
 	defer c.bc.RemoveAgent(agent.ID)
-	job := driver.Job{
+	job := types.Job{
 		Func: funcName,
 		Name: name,
 	}

@@ -2,15 +2,15 @@ package periodic
 
 import (
 	"bytes"
-	"github.com/Lupino/periodic/driver"
-	"github.com/Lupino/periodic/protocol"
+	"github.com/Lupino/go-periodic/protocol"
+	"github.com/Lupino/go-periodic/types"
 	"strconv"
 )
 
 // Job defined a job type.
 type Job struct {
 	bc       *BaseClient
-	Raw      driver.Job
+	Raw      types.Job
 	FuncName string
 	Name     string
 	Args     string
@@ -19,9 +19,9 @@ type Job struct {
 
 // NewJob create a job
 func NewJob(bc *BaseClient, data []byte) (job Job, err error) {
-	var raw driver.Job
+	var raw types.Job
 	parts := bytes.SplitN(data, protocol.NullChar, 2)
-	raw, err = driver.NewJob(parts[1])
+	raw, err = types.NewJob(parts[1])
 	if err != nil {
 		return
 	}

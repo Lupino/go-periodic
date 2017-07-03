@@ -1,7 +1,7 @@
 package periodic
 
 import (
-	"github.com/Lupino/periodic/protocol"
+	"github.com/Lupino/go-periodic/protocol"
 	"github.com/ventu-io/go-shortid"
 	"io"
 	"log"
