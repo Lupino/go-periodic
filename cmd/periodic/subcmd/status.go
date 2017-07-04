@@ -17,9 +17,9 @@ func ShowStatus(entryPoint string) {
 	table := uitable.New()
 	table.MaxColWidth = 50
 
-	table.AddRow("FUNCTION", "WORKERS", "JOBS", "PROCESSING")
+	table.AddRow("FUNCTION", "WORKERS", "JOBS", "PROCESSING", "SCHEDAT")
 	for _, stat := range stats {
-		table.AddRow(stat[0], stat[1], stat[2], stat[3])
+		table.AddRow(stat[0], stat[1], stat[2], stat[3], stat[4])
 	}
 	fmt.Println(table)
 }

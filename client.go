@@ -83,7 +83,7 @@ func (c *Client) Status() ([][]string, error) {
 	stats := strings.Split(string(data), "\n")
 	sort.Strings(stats)
 
-	lines := make([][]string, 0, 4)
+	lines := make([][]string, 0, 5)
 	for _, stat := range stats {
 		if stat == "" {
 			continue
