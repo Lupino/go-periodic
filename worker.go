@@ -105,6 +105,7 @@ func (w *Worker) Work() {
 		task, ok = w.tasks[job.FuncName]
 		if !ok {
 			w.RemoveFunc(job.FuncName)
+			job.Fail()
 			<-sem
 			continue
 		}
