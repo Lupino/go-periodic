@@ -7,9 +7,9 @@ import (
 )
 
 // Dump cli dump
-func Dump(entryPoint, output string) {
+func Dump(entryPoint, xor, output string) {
 	c := periodic.NewClient()
-	if err := c.Connect(entryPoint); err != nil {
+	if err := c.Connect(entryPoint, xor); err != nil {
 		log.Fatal(err)
 	}
 	var fp *os.File

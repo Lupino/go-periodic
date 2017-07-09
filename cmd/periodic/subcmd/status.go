@@ -10,9 +10,9 @@ import (
 )
 
 // ShowStatus cli status
-func ShowStatus(entryPoint string) {
+func ShowStatus(entryPoint, xor string) {
 	c := periodic.NewClient()
-	if err := c.Connect(entryPoint); err != nil {
+	if err := c.Connect(entryPoint, xor); err != nil {
 		log.Fatal(err)
 	}
 	stats, _ := c.Status()

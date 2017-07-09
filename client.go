@@ -5,6 +5,7 @@ import (
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
 	"io"
+	"io/ioutil"
 	"net"
 	"sort"
 	"strconv"
@@ -22,13 +23,21 @@ func NewClient() *Client {
 }
 
 // Connect a periodic server.
-func (c *Client) Connect(addr string) error {
+func (c *Client) Connect(addr string, key ...string) error {
 	parts := strings.SplitN(addr, "://", 2)
 	conn, err := net.Dial(parts[0], parts[1])
 	if err != nil {
 		return err
 	}
-	c.bc = NewBaseClient(conn, protocol.TYPECLIENT)
+	if len(key) > 0 && len(key[0]) > 0 {
+		if keyBuf, err := ioutil.ReadFile(key[0]); err != nil {
+			return err
+		} else {
+			c.bc = NewBaseClient(protocol.NewXORConn(conn, keyBuf), protocol.TYPECLIENT)
+		}
+	} else {
+		c.bc = NewBaseClient(conn, protocol.TYPECLIENT)
+	}
 	go c.bc.ReceiveLoop()
 	return nil
 }

@@ -7,9 +7,9 @@ import (
 )
 
 // Load cli load
-func Load(entryPoint, input string) {
+func Load(entryPoint, xor, input string) {
 	c := periodic.NewClient()
-	if err := c.Connect(entryPoint); err != nil {
+	if err := c.Connect(entryPoint, xor); err != nil {
 		log.Fatal(err)
 	}
 	var fp *os.File

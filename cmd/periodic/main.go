@@ -20,8 +20,14 @@ func main() {
 		cli.StringFlag{
 			Name:   "H",
 			Value:  "unix:///tmp/periodic.sock",
-			Usage:  "the server address eg: tcp://127.0.0.1:5000",
+			Usage:  "Socket path eg: tcp://127.0.0.1:5000",
 			EnvVar: "PERIODIC_PORT",
+		},
+		cli.StringFlag{
+			Name:   "x",
+			Value:  "",
+			Usage:  "XOR Transport encode file",
+			EnvVar: "XOR_FILE",
 		},
 	}
 	app.Commands = []cli.Command{
@@ -29,7 +35,7 @@ func main() {
 			Name:  "status",
 			Usage: "Show status",
 			Action: func(c *cli.Context) error {
-				subcmd.ShowStatus(c.GlobalString("H"))
+				subcmd.ShowStatus(c.GlobalString("H"), c.GlobalString("x"))
 				return nil
 			},
 		},
@@ -78,7 +84,7 @@ func main() {
 				var now = time.Now()
 				var schedAt = int64(now.Unix()) + int64(delay)
 				opts["schedat"] = strconv.FormatInt(schedAt, 10)
-				subcmd.SubmitJob(c.GlobalString("H"), funcName, name, opts)
+				subcmd.SubmitJob(c.GlobalString("H"), c.GlobalString("x"), funcName, name, opts)
 				return nil
 			},
 		},
@@ -104,7 +110,7 @@ func main() {
 					cli.ShowCommandHelp(c, "remove")
 					log.Fatal("Job name and func is require")
 				}
-				subcmd.RemoveJob(c.GlobalString("H"), funcName, name)
+				subcmd.RemoveJob(c.GlobalString("H"), c.GlobalString("x"), funcName, name)
 				return nil
 			},
 		},
@@ -124,7 +130,7 @@ func main() {
 					cli.ShowCommandHelp(c, "drop")
 					log.Fatal("function name is required")
 				}
-				subcmd.DropFunc(c.GlobalString("H"), Func)
+				subcmd.DropFunc(c.GlobalString("H"), c.GlobalString("x"), Func)
 				return nil
 			},
 		},
@@ -160,7 +166,7 @@ func main() {
 					cli.ShowCommandHelp(c, "run")
 					log.Fatal("command is required")
 				}
-				subcmd.Run(c.GlobalString("H"), Func, exec, n)
+				subcmd.Run(c.GlobalString("H"), c.GlobalString("x"), Func, exec, n)
 				return nil
 			},
 		},
@@ -175,7 +181,7 @@ func main() {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				subcmd.Dump(c.GlobalString("H"), c.String("o"))
+				subcmd.Dump(c.GlobalString("H"), c.GlobalString("x"), c.String("o"))
 				return nil
 			},
 		},
@@ -190,7 +196,7 @@ func main() {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				subcmd.Load(c.GlobalString("H"), c.String("i"))
+				subcmd.Load(c.GlobalString("H"), c.GlobalString("x"), c.String("i"))
 				return nil
 			},
 		},

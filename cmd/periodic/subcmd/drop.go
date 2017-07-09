@@ -6,9 +6,9 @@ import (
 )
 
 // DropFunc cli drop
-func DropFunc(entryPoint, funcName string) {
+func DropFunc(entryPoint, xor, funcName string) {
 	c := periodic.NewClient()
-	if err := c.Connect(entryPoint); err != nil {
+	if err := c.Connect(entryPoint, xor); err != nil {
 		log.Fatal(err)
 	}
 	if err := c.DropFunc(funcName); err != nil {

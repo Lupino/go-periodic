@@ -3,6 +3,7 @@ package periodic
 import (
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
+	"io/ioutil"
 	"log"
 	"net"
 	"strings"
@@ -29,13 +30,21 @@ func NewWorker(size int) *Worker {
 }
 
 // Connect a periodic server.
-func (w *Worker) Connect(addr string) error {
+func (w *Worker) Connect(addr string, key ...string) error {
 	parts := strings.SplitN(addr, "://", 2)
 	conn, err := net.Dial(parts[0], parts[1])
 	if err != nil {
 		return err
 	}
-	w.bc = NewBaseClient(conn, protocol.TYPEWORKER)
+	if len(key) > 0 && len(key[0]) > 0 {
+		if keyBuf, err := ioutil.ReadFile(key[0]); err != nil {
+			return err
+		} else {
+			w.bc = NewBaseClient(protocol.NewXORConn(conn, keyBuf), protocol.TYPEWORKER)
+		}
+	} else {
+		w.bc = NewBaseClient(conn, protocol.TYPEWORKER)
+	}
 	go w.bc.ReceiveLoop()
 	return nil
 }

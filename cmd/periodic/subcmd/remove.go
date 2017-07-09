@@ -6,9 +6,9 @@ import (
 )
 
 // RemoveJob cli remove
-func RemoveJob(entryPoint, funcName, name string) {
+func RemoveJob(entryPoint, xor, funcName, name string) {
 	c := periodic.NewClient()
-	if err := c.Connect(entryPoint); err != nil {
+	if err := c.Connect(entryPoint, xor); err != nil {
 		log.Fatal(err)
 	}
 	if err := c.RemoveJob(funcName, name); err != nil {
