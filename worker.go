@@ -126,7 +126,7 @@ func (w *Worker) Work() {
 		sem <- struct{}{}
 		job, err = w.GrabJob(agent)
 		if err != nil {
-			log.Printf("GrabJob Error: %s\n", err)
+			// log.Printf("GrabJob Error: %s\n", err)
 			<-sem
 			continue
 		}
