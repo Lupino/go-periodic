@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Worker defined a client.
@@ -62,16 +63,33 @@ func (w *Worker) Ping() bool {
 }
 
 // GrabJob from periodic server.
-func (w *Worker) GrabJob() (j Job, e error) {
-	agent := w.bc.NewAgent()
-	defer w.bc.RemoveAgent(agent.ID)
+func (w *Worker) GrabJob(agent *Agent) (job Job, err error) {
 	agent.Send(protocol.GRABJOB, nil)
-	ret, data, _ := agent.Receive()
-	if ret != protocol.JOBASSIGN {
-		e = fmt.Errorf("GrabJob failed!")
-		return
+	c1 := make(chan Job, 1)
+	c2 := make(chan error, 1)
+	go func() {
+		ret, data, _ := agent.Receive()
+		if ret != protocol.JOBASSIGN {
+			e := fmt.Errorf("GrabJob failed!")
+			c2 <- e
+			return
+		}
+		j, e := NewJob(w.bc, data)
+		if e != nil {
+			c2 <- e
+			return
+		}
+		c1 <- j
+	}()
+	select {
+	case job = <-c1:
+		break
+	case err = <-c2:
+		break
+	case <-time.After(1 * time.Second):
+		err = fmt.Errorf("GrabJob timeout!")
+		break
 	}
-	j, e = NewJob(w.bc, data)
 	return
 }
 
@@ -103,9 +121,10 @@ func (w *Worker) Work() {
 		w.size = 1
 	}
 	var sem = make(chan struct{}, w.size)
+	var agent = w.bc.NewAgent()
 	for w.alive {
 		sem <- struct{}{}
-		job, err = w.GrabJob()
+		job, err = w.GrabJob(agent)
 		if err != nil {
 			log.Printf("GrabJob Error: %s\n", err)
 			<-sem
