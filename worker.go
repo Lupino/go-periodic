@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"io/ioutil"
-	"log"
+	// "log"
 	"net"
 	"strings"
 	"sync"
