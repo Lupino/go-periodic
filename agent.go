@@ -3,7 +3,6 @@ package periodic
 import (
 	"bytes"
 	"github.com/Lupino/go-periodic/protocol"
-	"io"
 	"sync"
 )
 
@@ -44,10 +43,8 @@ func NewAgent(conn protocol.Conn, ID []byte) *Agent {
 func (a *Agent) Send(cmd protocol.Command, data []byte) error {
 	buf := bytes.NewBuffer(nil)
 	buf.Write(a.ID)
-	buf.Write(protocol.NullChar)
 	buf.WriteByte(byte(cmd))
 	if data != nil {
-		buf.Write(protocol.NullChar)
 		buf.Write(data)
 	}
 	return a.conn.Send(buf.Bytes())
@@ -98,52 +95,4 @@ func (a *Agent) FeedError(err error) {
 		a.waiting = false
 		a.waiter.Unlock()
 	}
-}
-
-type DumpAgent struct {
-	conn   protocol.Conn
-	ID     []byte
-	w      io.Writer
-	waiter *sync.RWMutex
-}
-
-// NewDumpAgent create an agent.
-func NewDumpAgent(conn protocol.Conn, ID []byte, w io.Writer) *DumpAgent {
-	agent := new(DumpAgent)
-	agent.conn = conn
-	agent.ID = ID
-	agent.w = w
-	agent.waiter = new(sync.RWMutex)
-	return agent
-}
-
-// Send command and data to server.
-func (a *DumpAgent) Send() error {
-	buf := bytes.NewBuffer(nil)
-	buf.Write(a.ID)
-	buf.Write(protocol.NullChar)
-	buf.WriteByte(byte(protocol.DUMP))
-	return a.conn.Send(buf.Bytes())
-}
-
-// FeedCommand feed command from a connection or other.
-func (a *DumpAgent) FeedCommand(cmd protocol.Command, data []byte) {
-	if bytes.Equal(data, []byte("EOF")) {
-		a.waiter.Unlock()
-		return
-	}
-	header, _ := protocol.MakeHeader(data)
-	a.w.Write(header)
-	a.w.Write(data)
-}
-
-// FeedError feed error when the agent cause a error.
-func (a *DumpAgent) FeedError(err error) {
-	a.waiter.Unlock()
-}
-
-// Wait dump complete
-func (a *DumpAgent) Wait() {
-	a.waiter.Lock()
-	a.waiter.Lock()
 }

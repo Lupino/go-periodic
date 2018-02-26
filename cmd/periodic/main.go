@@ -170,36 +170,6 @@ func main() {
 				return nil
 			},
 		},
-		{
-			Name:  "dump",
-			Usage: "Dump database to file.",
-			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "o",
-					Value: "dump.db",
-					Usage: "output file name required",
-				},
-			},
-			Action: func(c *cli.Context) error {
-				subcmd.Dump(c.GlobalString("H"), c.GlobalString("x"), c.String("o"))
-				return nil
-			},
-		},
-		{
-			Name:  "load",
-			Usage: "Load file to database.",
-			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "i",
-					Value: "dump.db",
-					Usage: "input file name required",
-				},
-			},
-			Action: func(c *cli.Context) error {
-				subcmd.Load(c.GlobalString("H"), c.GlobalString("x"), c.String("i"))
-				return nil
-			},
-		},
 	}
 	app.Action = func(c *cli.Context) error {
 		cli.ShowAppHelp(c)

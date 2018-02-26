@@ -44,20 +44,8 @@ func (c *BaseClient) NewAgent() *Agent {
 	if err != nil {
 		log.Fatal(err)
 	}
+	agentID = agentID[:4]
 	agent := NewAgent(c.conn, []byte(agentID))
-	c.agents[agentID] = agent
-	return agent
-}
-
-// NewDumpAgent create a new agent with an shortid
-func (c *BaseClient) NewDumpAgent(w io.Writer) *DumpAgent {
-	c.locker.Lock()
-	defer c.locker.Unlock()
-	agentID, err := shortid.Generate()
-	if err != nil {
-		log.Fatal(err)
-	}
-	agent := NewDumpAgent(c.conn, []byte(agentID), w)
 	c.agents[agentID] = agent
 	return agent
 }

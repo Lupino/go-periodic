@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"net"
 	"sync"
@@ -63,7 +64,7 @@ func (conn *Conn) Receive() (rdata []byte, rerr error) {
 		return nil, err
 	}
 
-	length := ParseHeader(header)
+	length := binary.BigEndian.Uint32(header)
 
 	rdata, rerr = conn.receive(length)
 
@@ -87,10 +88,8 @@ func (conn *Conn) receive(length uint32) ([]byte, error) {
 func (conn *Conn) Send(data []byte) error {
 	conn.wlocker.Lock()
 	defer conn.wlocker.Unlock()
-	header, err := MakeHeader(data)
-	if err != nil {
-		return err
-	}
+	var header = make([]byte, 4)
+	binary.BigEndian.PutUint32(header, uint32(len(data)))
 
 	if err := conn.write(conn.ResponseMagic); err != nil {
 		return err

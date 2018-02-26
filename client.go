@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
-	"io"
 	"io/ioutil"
 	"net"
 	"sort"
@@ -129,57 +128,6 @@ func (c *Client) RemoveJob(funcName, name string) error {
 		return nil
 	}
 	return fmt.Errorf("RemoveJob error: %s", data)
-}
-
-// Dump data from periodic server.
-func (c *Client) Dump(w io.Writer) error {
-	agent := c.bc.NewDumpAgent(w)
-	defer c.bc.RemoveAgent(agent.ID)
-	agent.Send()
-	agent.Wait()
-	return nil
-}
-
-// Load data for periodic server.
-func (c *Client) Load(r io.Reader) error {
-	agent := c.bc.NewAgent()
-	defer c.bc.RemoveAgent(agent.ID)
-	var err error
-	for {
-		payload, err := readPatch(r)
-		if err != nil {
-			break
-		}
-		agent.Send(protocol.LOAD, payload)
-	}
-	if err == io.EOF {
-		err = nil
-	}
-	return err
-}
-
-func readPatch(fp io.Reader) (payload []byte, err error) {
-	var header = make([]byte, 4)
-	nRead := uint32(0)
-	for nRead < 4 {
-		n, err := fp.Read(header[nRead:])
-		if err != nil {
-			return nil, err
-		}
-		nRead = nRead + uint32(n)
-	}
-
-	length := protocol.ParseHeader(header)
-	payload = make([]byte, length)
-	nRead = uint32(0)
-	for nRead < length {
-		n, err := fp.Read(payload[nRead:])
-		if err != nil {
-			return nil, err
-		}
-		nRead = nRead + uint32(n)
-	}
-	return
 }
 
 // Close the client.

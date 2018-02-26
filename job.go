@@ -2,9 +2,9 @@ package periodic
 
 import (
 	"bytes"
+	"encoding/binary"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
-	"strconv"
 )
 
 // Job defined a job type.
@@ -19,9 +19,16 @@ type Job struct {
 
 // NewJob create a job
 func NewJob(bc *BaseClient, data []byte) (job Job, err error) {
+	var h0 byte
+	var h1 byte
+	h0 = data[0]
+	h1 = data[h0+1]
+
+	handle := data[0 : h0+h1+2]
+	data = data[h0+h1+2:]
+
 	var raw types.Job
-	parts := bytes.SplitN(data, protocol.NullChar, 2)
-	raw, err = types.NewJob(parts[1])
+	raw, err = types.NewJob(data)
 	if err != nil {
 		return
 	}
@@ -31,7 +38,7 @@ func NewJob(bc *BaseClient, data []byte) (job Job, err error) {
 		FuncName: raw.Func,
 		Name:     raw.Name,
 		Args:     raw.Args,
-		Handle:   parts[0],
+		Handle:   handle,
 	}
 	return
 }
@@ -61,12 +68,17 @@ func (j *Job) SchedLater(opts ...int) error {
 	defer j.bc.RemoveAgent(agent.ID)
 	buf := bytes.NewBuffer(nil)
 	buf.Write(j.Handle)
-	buf.Write(protocol.NullChar)
-	buf.WriteString(strconv.Itoa(delay))
+	h64 := make([]byte, 8)
+	binary.BigEndian.PutUint64(h64, uint64(delay))
+	buf.Write(h64)
+
+	h16 := make([]byte, 2)
 	if len(opts) == 2 {
-		buf.Write(protocol.NullChar)
-		buf.WriteString(strconv.Itoa(opts[1]))
+		binary.BigEndian.PutUint16(h16, uint16(opts[1]))
+	} else {
+		binary.BigEndian.PutUint16(h16, uint16(0))
 	}
+	buf.Write(h16)
 	agent.Send(protocol.SCHEDLATER, buf.Bytes())
 	return nil
 }
