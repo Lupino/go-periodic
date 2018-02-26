@@ -1,7 +1,6 @@
 package periodic
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
@@ -101,13 +100,6 @@ func (c *Client) Status() ([][]string, error) {
 		lines = append(lines, line)
 	}
 	return lines, nil
-}
-
-func encode8(dat string) []byte {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteByte(byte(len(dat)))
-	buf.WriteString(dat)
-	return buf.Bytes()
 }
 
 // DropFunc drop unuself function from periodic server.
