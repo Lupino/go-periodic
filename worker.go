@@ -5,6 +5,7 @@ import (
 	"github.com/Lupino/go-periodic/protocol"
 	"io/ioutil"
 	// "log"
+	"bytes"
 	"net"
 	"strings"
 	"sync"
@@ -93,11 +94,18 @@ func (w *Worker) GrabJob(agent *Agent) (job Job, err error) {
 	return
 }
 
+func encode8(dat string) []byte {
+	buf := bytes.NewBuffer(nil)
+	buf.WriteByte(byte(len(dat)))
+	buf.WriteString(dat)
+	return buf.Bytes()
+}
+
 // AddFunc to periodic server.
 func (w *Worker) AddFunc(funcName string, task func(Job)) error {
 	agent := w.bc.NewAgent()
 	defer w.bc.RemoveAgent(agent.ID)
-	agent.Send(protocol.CANDO, []byte(funcName))
+	agent.Send(protocol.CANDO, encode8(funcName))
 	w.tasks[funcName] = task
 	return nil
 }
@@ -106,7 +114,7 @@ func (w *Worker) AddFunc(funcName string, task func(Job)) error {
 func (w *Worker) RemoveFunc(funcName string) error {
 	agent := w.bc.NewAgent()
 	defer w.bc.RemoveAgent(agent.ID)
-	agent.Send(protocol.CANTDO, []byte(funcName))
+	agent.Send(protocol.CANTDO, encode8(funcName))
 	delete(w.tasks, funcName)
 	return nil
 }
