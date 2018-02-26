@@ -7,7 +7,6 @@ import (
 
 // Job workload.
 type Job struct {
-	ID      int64
 	Name    string // The job name, this is unique.
 	Func    string // The job function reffer on worker function
 	Args    string // Job args
