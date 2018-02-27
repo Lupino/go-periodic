@@ -23,10 +23,9 @@ func NewJob(bc *BaseClient, data []byte) (job Job, err error) {
 	h = data[0]
 
 	handle := data[0 : h+1]
-	data = data[h+1:]
 
 	var raw types.Job
-	raw, err = types.NewJob(data)
+	raw, err = types.NewJob(data[h+1:])
 	if err != nil {
 		return
 	}
