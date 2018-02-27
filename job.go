@@ -19,7 +19,7 @@ type Job struct {
 
 // NewJob create a job
 func NewJob(bc *BaseClient, data []byte) (job Job, err error) {
-	var h0 byte
+	var h byte
 	h = data[0]
 
 	handle := data[0 : h+1]
