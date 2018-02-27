@@ -30,8 +30,10 @@ func NewJob(payload []byte) (job Job, err error) {
 	h32 := payload[0:4]
 	payload = payload[4:]
 	length := binary.BigEndian.Uint32(h32)
-	job.Args = string(payload[0:length])
-	payload = payload[length:]
+	if length > 0 {
+		job.Args = string(payload[0:length])
+		payload = payload[length:]
+	}
 
 	h64 := payload[0:8]
 	payload = payload[8:]
