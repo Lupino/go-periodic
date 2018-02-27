@@ -37,6 +37,7 @@ func NewJob(payload []byte) (job Job, err error) {
 	payload = payload[8:]
 	job.SchedAt = int64(binary.BigEndian.Uint64(h64))
 
+	h32 = payload[0:4]
 	job.Counter = int64(binary.BigEndian.Uint32(h32))
 	return
 }
