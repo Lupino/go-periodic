@@ -8,7 +8,7 @@ func ParseCommand(payload []byte) (msgID []byte, cmd Command, data []byte) {
 		cmd = Command(payload[4])
 	}
 	if len(payload) > 5 {
-		data = payload[4:]
+		data = payload[5:]
 	}
 	return
 }
