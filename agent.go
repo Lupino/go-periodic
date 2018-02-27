@@ -11,6 +11,12 @@ type Feeder interface {
 	FeedError(error)
 }
 
+type data struct {
+	data []byte
+	cmd  protocol.Command
+	err  error
+}
+
 // Agent for client.
 type Agent struct {
 	conn    protocol.Conn
@@ -18,10 +24,8 @@ type Agent struct {
 	locker  *sync.RWMutex
 	waiter  *sync.RWMutex
 	waiting bool
-	data    []byte
-	cmd     protocol.Command
 	recived bool
-	err     error
+	reader  chan data
 }
 
 // NewAgent create an agent.
@@ -32,10 +36,8 @@ func NewAgent(conn protocol.Conn, ID []byte) *Agent {
 	agent.locker = new(sync.RWMutex)
 	agent.waiter = new(sync.RWMutex)
 	agent.waiting = false
-	agent.data = nil
-	agent.cmd = protocol.UNKNOWN
+	agent.reader = make(chan data, 10)
 	agent.recived = false
-	agent.err = nil
 	return agent
 }
 
@@ -52,47 +54,19 @@ func (a *Agent) Send(cmd protocol.Command, data []byte) error {
 
 // Receive command or data from server.
 func (a *Agent) Receive() (cmd protocol.Command, data []byte, err error) {
-	for {
-		a.locker.Lock()
-		if a.recived || a.err != nil {
-			a.locker.Unlock()
-			break
-		}
-		a.waiting = true
-		a.locker.Unlock()
-		a.waiter.Lock()
-	}
-
-	a.locker.Lock()
-	cmd = a.cmd
-	data = a.data
-	err = a.err
-	a.recived = false
-	a.locker.Unlock()
+	dat := <-a.reader
+	cmd = dat.cmd
+	data = dat.data
+	err = dat.err
 	return
 }
 
 // FeedCommand feed command from a connection or other.
-func (a *Agent) FeedCommand(cmd protocol.Command, data []byte) {
-	a.locker.Lock()
-	defer a.locker.Unlock()
-	a.data = data
-	a.cmd = cmd
-	a.recived = true
-
-	if a.waiting {
-		a.waiting = false
-		a.waiter.Unlock()
-	}
+func (a *Agent) FeedCommand(cmd protocol.Command, dat []byte) {
+	a.reader <- data{cmd: cmd, data: dat, err: nil}
 }
 
 // FeedError feed error when the agent cause a error.
 func (a *Agent) FeedError(err error) {
-	a.locker.Lock()
-	defer a.locker.Unlock()
-	a.err = err
-	if a.waiting {
-		a.waiting = false
-		a.waiter.Unlock()
-	}
+	a.reader <- data{cmd: protocol.UNKNOWN, data: nil, err: nil}
 }
