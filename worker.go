@@ -1,14 +1,12 @@
 package periodic
 
 import (
-	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"io/ioutil"
 	// "log"
 	"bytes"
 	"net"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -17,7 +15,6 @@ type Worker struct {
 	bc    *BaseClient
 	tasks map[string]func(Job)
 	alive bool
-	wg    sync.WaitGroup
 	size  int
 }
 
@@ -26,7 +23,6 @@ func NewWorker(size int) *Worker {
 	w := new(Worker)
 	w.tasks = make(map[string]func(Job))
 	w.alive = true
-	w.wg = sync.WaitGroup{}
 	w.size = size
 	return w
 }
@@ -64,34 +60,33 @@ func (w *Worker) Ping() bool {
 }
 
 // GrabJob from periodic server.
-func (w *Worker) GrabJob(agent *Agent) (job Job, err error) {
-	agent.Send(protocol.GRABJOB, nil)
-	c1 := make(chan Job, 1)
-	c2 := make(chan error, 1)
+func (w *Worker) GrabJob(agent *Agent, ch chan Job, waiter chan bool) {
 	go func() {
-		ret, data, _ := agent.Receive()
-		if ret != protocol.JOBASSIGN {
-			e := fmt.Errorf("GrabJob failed!")
-			c2 <- e
-			return
+		for {
+			ret, data, _ := agent.Receive()
+			if ret != protocol.JOBASSIGN {
+				continue
+			}
+			j, e := NewJob(w.bc, data)
+			if e != nil {
+				continue
+			}
+			ch <- j
 		}
-		j, e := NewJob(w.bc, data)
-		if e != nil {
-			c2 <- e
-			return
-		}
-		c1 <- j
 	}()
-	select {
-	case job = <-c1:
-		break
-	case err = <-c2:
-		break
-	case <-time.After(1 * time.Second):
-		err = fmt.Errorf("GrabJob timeout!")
-		break
-	}
-	return
+	go func() {
+		for {
+			if len(ch) == 0 {
+				agent.Send(protocol.GRABJOB, nil)
+			}
+			select {
+			case <-waiter:
+				break
+			case <-time.After(1 * time.Second):
+				break
+			}
+		}
+	}()
 }
 
 func encode8(dat string) []byte {
@@ -121,42 +116,39 @@ func (w *Worker) RemoveFunc(funcName string) error {
 
 // Work do the task.
 func (w *Worker) Work() {
-	var err error
-	var job Job
-	var task func(Job)
-	var ok bool
 	if w.size < 1 {
 		w.size = 1
 	}
-	var sem = make(chan struct{}, w.size)
+	for i := 1; i < w.size; i++ {
+		go w.work()
+	}
+	w.work()
+}
+
+// work do the task.
+func (w *Worker) work() {
+	var job Job
+	var task func(Job)
+	var ok bool
 	var agent = w.bc.NewAgent()
+	var ch = make(chan Job, 100)
+	var waiter = make(chan bool, 10)
+	w.GrabJob(agent, ch, waiter)
 	for w.alive {
-		sem <- struct{}{}
-		job, err = w.GrabJob(agent)
-		if err != nil {
-			// log.Printf("GrabJob Error: %s\n", err)
-			<-sem
-			continue
-		}
+		job = <-ch
 		task, ok = w.tasks[job.FuncName]
 		if !ok {
 			w.RemoveFunc(job.FuncName)
 			job.Fail()
-			<-sem
 			continue
 		}
-		w.wg.Add(1)
-		go func() {
-			defer w.wg.Done()
-			task(job)
-			<-sem
-		}()
+		task(job)
+		waiter <- true
 	}
 }
 
 // Close the client.
 func (w *Worker) Close() {
 	w.alive = false
-	w.wg.Wait()
 	w.bc.Close()
 }
