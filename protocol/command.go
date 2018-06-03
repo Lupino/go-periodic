@@ -10,45 +10,61 @@ type Command int
 
 const (
 	// NOOP do nothing
-	NOOP Command = iota // server
+	NOOP Command = 0 // server
 	// GRABJOB client ask a job
-	GRABJOB // client
+	GRABJOB Command = 1 // worker
 	// SCHEDLATER tell server sched later the job
-	SCHEDLATER // client
+	SCHEDLATER Command = 2 // worker
 	// WORKDONE tell server the work is done
-	WORKDONE // client
+	WORKDONE Command = 3 // worker
 	// WORKFAIL tell server work is fail
-	WORKFAIL // client
+	WORKFAIL Command = 4 // worker
 	// JOBASSIGN assign a job for client
-	JOBASSIGN // server
+	JOBASSIGN Command = 5 // server
 	// NOJOB tell client job is empty
-	NOJOB // server
-	// CANDO tell server the client can do some func
-	CANDO // client
-	// CANTDO tell server the client can not do some func
-	CANTDO // client
+	NOJOB Command = 6 // server
+	// CANDO tell server the worker can do some func
+	CANDO Command = 7 // worker
+	// CANTDO tell server the worker can not do some func
+	CANTDO Command = 8 // worker
 	// PING test ping
-	PING // client
+	PING Command = 9 // client or worker
 	// PONG reply pong
-	PONG // server
-	// SLEEP tell the client to sleep
-	SLEEP // client
+	PONG Command = 10 // server
+	// SLEEP tell the worker to sleep
+	SLEEP Command = 11 // worker
 	// UNKNOWN command unknow
-	UNKNOWN // server
+	UNKNOWN Command = 12 // server
 	// SUBMITJOB submit a job for server
-	SUBMITJOB // client
+	SUBMITJOB Command = 13 // client
 	// STATUS ask the server status
-	STATUS // client
+	STATUS Command = 14 // client
 	// DROPFUNC drop an empty worker func
-	DROPFUNC // client
+	DROPFUNC Command = 15 // client
 	// SUCCESS reply client success
-	SUCCESS // server
+	SUCCESS Command = 16 // server
 	// REMOVEJOB remove a job
-	REMOVEJOB // client
+	REMOVEJOB Command = 17 // client
+
 	// DUMP dump the data
-	DUMP // client
+	DUMP Command = 18 // client
 	// LOAD load data to database
-	LOAD // client
+	LOAD Command = 19 // client
+	// SHUTDOWN shutdown the server
+	SHUTDOWN Command = 20 // client
+	// BROADCAST broadcast all the worker
+	BROADCAST Command = 21 // worker
+
+	// CONFIGGET get the server config
+	CONFIGGET Command = 22 // client
+	// CONFIGSET set the server config
+	CONFIGSET Command = 23 // client
+	// CONFIG return config to client
+	CONFIG Command = 24 // server
+	// RUNJOB run job and got a result
+	RUNJOB Command = 25 // client
+	// WORKDATA send the result to client
+	WORKDATA Command = 26 // worker
 )
 
 // Bytes convert command to byte
@@ -98,6 +114,20 @@ func (c Command) String() string {
 		return "REMOVEJOB"
 	case DUMP:
 		return "DUMP"
+	case SHUTDOWN:
+		return "SHUTDOWN"
+	case BROADCAST:
+		return "BROADCAST"
+	case CONFIGGET:
+		return "CONFIGGET"
+	case CONFIGSET:
+		return "CONFIGSET"
+	case CONFIG:
+		return "CONFIG"
+	case RUNJOB:
+		return "RUNJOB"
+	case WORKDATA:
+		return "WORKDATA"
 	}
 	panic("Unknow Command " + strconv.Itoa(int(c)))
 }

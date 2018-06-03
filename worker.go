@@ -105,6 +105,15 @@ func (w *Worker) AddFunc(funcName string, task func(Job)) error {
 	return nil
 }
 
+// Broadcast to all worker.
+func (w *Worker) Broadcast(funcName string, task func(Job)) error {
+	agent := w.bc.NewAgent()
+	defer w.bc.RemoveAgent(agent.ID)
+	agent.Send(protocol.BROADCAST, encode8(funcName))
+	w.tasks[funcName] = task
+	return nil
+}
+
 // RemoveFunc to periodic server.
 func (w *Worker) RemoveFunc(funcName string) error {
 	agent := w.bc.NewAgent()

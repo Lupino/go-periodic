@@ -58,11 +58,6 @@ func main() {
 					Value: "",
 					Usage: "job workload",
 				},
-				cli.StringFlag{
-					Name:  "t",
-					Value: "0",
-					Usage: "job running timeout",
-				},
 				cli.IntFlag{
 					Name:  "sched_later",
 					Value: 0,
@@ -73,8 +68,7 @@ func main() {
 				var name = c.String("n")
 				var funcName = c.String("f")
 				var opts = map[string]string{
-					"args":    c.String("args"),
-					"timeout": c.String("t"),
+					"args": c.String("args"),
 				}
 				if len(name) == 0 || len(funcName) == 0 {
 					cli.ShowCommandHelp(c, "submit")

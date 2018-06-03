@@ -57,7 +57,6 @@ func (c *Client) Ping() bool {
 //  opts = map[string]string{
 //    "schedat": schedat,
 //    "args": args,
-//    "timeout": timeout,
 //  }
 func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error {
 	agent := c.bc.NewAgent()
@@ -79,6 +78,25 @@ func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error 
 		return nil
 	}
 	return fmt.Errorf("SubmitJob error: %s", data)
+}
+
+// RunJob to periodic server and get an result.
+//  opts = map[string]string{
+//    "args": args,
+//  }
+func (c *Client) RunJob(funcName, name string, opts map[string]string) (err error, ret []byte) {
+	agent := c.bc.NewAgent()
+	defer c.bc.RemoveAgent(agent.ID)
+	job := types.Job{
+		Func: funcName,
+		Name: name,
+	}
+	if args, ok := opts["args"]; ok {
+		job.Args = args
+	}
+	agent.Send(protocol.RUNJOB, job.Bytes())
+	_, ret, err = agent.Receive()
+	return
 }
 
 // Status return a status from periodic server.

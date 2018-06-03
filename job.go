@@ -48,6 +48,14 @@ func (j *Job) Done() error {
 	return nil
 }
 
+// Data send job data to client.
+func (j *Job) Data(data []byte) error {
+	agent := j.bc.NewAgent()
+	defer j.bc.RemoveAgent(agent.ID)
+	agent.Send(protocol.WORKDATA, bytes.Join([][]byte{j.Handle, data}, []byte("")))
+	return nil
+}
+
 // Fail tell periodic server the job fail.
 func (j *Job) Fail() error {
 	agent := j.bc.NewAgent()
