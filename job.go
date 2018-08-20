@@ -41,18 +41,14 @@ func NewJob(bc *BaseClient, data []byte) (job Job, err error) {
 }
 
 // Done tell periodic server the job done.
-func (j *Job) Done() error {
+func (j *Job) Done(data ...[]byte) error {
 	agent := j.bc.NewAgent()
 	defer j.bc.RemoveAgent(agent.ID)
-	agent.Send(protocol.WORKDONE, j.Handle)
-	return nil
-}
-
-// Data send job data to client.
-func (j *Job) Data(data []byte) error {
-	agent := j.bc.NewAgent()
-	defer j.bc.RemoveAgent(agent.ID)
-	agent.Send(protocol.WORKDATA, bytes.Join([][]byte{j.Handle, data}, []byte("")))
+	var dat = []byte("")
+	if len(data) == 1 {
+		dat = data[0]
+	}
+	agent.Send(protocol.WORKDONE, bytes.Join([][]byte{j.Handle, dat}, []byte("")))
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package periodic
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
@@ -136,11 +137,12 @@ func (c *Client) DropFunc(Func string) error {
 func (c *Client) RemoveJob(funcName, name string) error {
 	agent := c.bc.NewAgent()
 	defer c.bc.RemoveAgent(agent.ID)
-	job := types.Job{
-		Func: funcName,
-		Name: name,
-	}
-	agent.Send(protocol.REMOVEJOB, job.Bytes())
+	buf := bytes.NewBuffer(nil)
+	buf.WriteByte(byte(len(funcName)))
+	buf.WriteString(funcName)
+	buf.WriteByte(byte(len(name)))
+	buf.WriteString(name)
+	agent.Send(protocol.REMOVEJOB, buf.Bytes())
 	ret, data, _ := agent.Receive()
 	if ret == protocol.SUCCESS {
 		return nil

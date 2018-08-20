@@ -39,8 +39,17 @@ func NewJob(payload []byte) (job Job, err error) {
 	payload = payload[8:]
 	job.SchedAt = int64(binary.BigEndian.Uint64(h64))
 
-	h32 = payload[0:4]
-	job.Counter = int64(binary.BigEndian.Uint32(h32))
+	var ver byte
+
+	ver = payload[0]
+
+	payload = payload[1:]
+
+	if ver == 1 {
+		h32 = payload[0:4]
+		job.Counter = int64(binary.BigEndian.Uint32(h32))
+	}
+
 	return
 }
 
@@ -61,7 +70,17 @@ func (job Job) Bytes() []byte {
 	binary.BigEndian.PutUint64(h64, uint64(job.SchedAt))
 	buf.Write(h64)
 
-	binary.BigEndian.PutUint32(h32, uint32(job.Counter))
-	buf.Write(h32)
+	var ver = 0
+	if job.Counter > 0 {
+		ver = 1
+	}
+
+	buf.WriteByte(byte(ver))
+
+	if ver == 1 {
+		binary.BigEndian.PutUint32(h32, uint32(job.Counter))
+		buf.Write(h32)
+	}
+
 	return buf.Bytes()
 }

@@ -63,8 +63,6 @@ const (
 	CONFIG Command = 24 // server
 	// RUNJOB run job and got a result
 	RUNJOB Command = 25 // client
-	// WORKDATA send the result to client
-	WORKDATA Command = 26 // worker
 )
 
 // Bytes convert command to byte
@@ -126,8 +124,6 @@ func (c Command) String() string {
 		return "CONFIG"
 	case RUNJOB:
 		return "RUNJOB"
-	case WORKDATA:
-		return "WORKDATA"
 	}
 	panic("Unknow Command " + strconv.Itoa(int(c)))
 }

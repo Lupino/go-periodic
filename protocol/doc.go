@@ -31,27 +31,21 @@ request to a job to be run. The job server then notifies each worker
 that can perform that job (based on the function it registered) that
 a new job is ready. The first worker to wake up and retrieve the job
 will then execute it.
-
 All communication between workers or clients and the periodic server
 are binary.
-
 
 ## Binary Packet
 
 Requests and responses are encapsulated by a binary packet. A binary
 packet consists of a header which is optionally followed by data. The
 header is:
-
     4 byte magic code   - This is either "\0REQ" for requests or "\0RES"
                           for responses.
-
     4 byte size         - A big-endian (network-order) integer containing
                           the size of the data being sent.
-
-    ? byte  message id  - A client unique message id.
+    4 byte  message id  - A client unique message id.
     1 byte  command     - A big-endian (network-order) integer containing
                           an enumerated packet command. Possible values are:
-
                         #   Name          Type
                         0   NOOP          Client/Worker
                         1   GRAB_JOB      Worker
@@ -71,199 +65,228 @@ header is:
                         15  DROP_FUNC     Client
                         16  SUCCESS       Client/Worker
                         17  REMOVE_JOB    Client
-
-
-Arguments given in the data part are separated by a NULL byte.
-
+                        18  DUMP          Client
+                        19  LOAD          Client
+                        20  SHUTDOWN      Client
+                        21  BROADCAST     Worker
+                        22  CONFIG_GET    Client
+                        23  CONFIG_SET    Client
+                        24  CONFIG        Client
+                        25  RUN_JOB       Client
 
 ## Client/Worker Requests
-
 These request types may be sent by either a client or a worker:
-
     PING
-
         When a periodic server receives this request, it simply generates a
         PONG packet. This is primarily used for testing
         or debugging.
-
         Arguments:
         - None.
 
-
 ## Client/Worker Responses
-
 These response types may be sent to either a client or a worker:
-
     PONG
-
         This is sent in response to a PING request.
-
         Arguments:
         - None.
 
 ## Client Requests
-
 These request types may only be sent by a client:
-
     SUBMIT_JOB
-
         A client issues one of these when a job needs to be run. The
-        server will then assign a job handle and respond with a SUCCESS
-        packet.
-
+        server will respond with a SUCCESS packet.
         Arguments:
-        - JSON byte job object.
+        - 1 byte func size
+        - ? byte func name
+        - 1 byte name size
+        - ? byte name
+        - 4 byte workload size
+        - ? byte workload
+        - 8 byte sched time (unix time, int64)
+        - 1 byte job version
+            - #  version
+            - 0  Ver0
+            - 1  Ver1
 
+        Version Spec:
+            Ver0:
+            - None
+            Ver1:
+            - 4 byte run count           this assign by worker
+   RUN_JOB
+        A client issues one of these when a job needs to be run. The
+        server will respond with a binary packet.
+        Arguments:
+        - 1 byte func size
+        - ? byte func name
+        - 1 byte name size
+        - ? byte name
+        - 4 byte workload size
+        - ? byte workload
+        - 8 byte sched time (unix time, int64)
+        - 1 byte job version
+            - #  version
+            - 0  Ver0
+            - 1  Ver1
+
+        Version Spec:
+            Ver0:
+            - None
+            Ver1:
+            - 4 byte run count           this assign by worker
     STATUS
-
         This sends back a list of all registered functions.  Next to
         each function is the number of jobs in the queue, the number of
         running jobs, and the number of capable workers. The format is:
-
-        FUNCTION,TOTAL_WORKER,TOTAL_JOB,PROCESSING_JOB
-
+        FUNCTIONS  WORKERS  JOBS  PROCESSING  SCHEDAT
         Arguments:
         - None.
-
     DROP_FUNC
-
         Drop the function when there is not worker registered, and respond with
         a SUCCESS packet.
-
         Arguments:
-        - Function name.
-
-
+        - 1 byte func size
+        - ? byte func name
     REMOVE_JOB
-
         Remove a job, and respond with a SUCCESS packet.
-
         Arguments:
-        - JSON byte job object.
-
+        - 1 byte func size
+        - ? byte func name
+        - 1 byte name size
+        - ? byte name
     DUMP
-
-        This is to dump the data to client.
-
+        Dump data from server. The server will respond with a binary packet.
         Arguments:
         - None.
-
-   LOAD
-
-        This is to Load the data to server.
-
+    LOAD
+        Load data to server. The server will respond with a SUCCESS packet.
         Arguments:
         - None.
-
+    CONFIG_GET
+        Get config from server. The server will respond with a CONFIG packet.
+        Arguments:
+        - 1 byte key size.
+        - ? byte key. the key is one of
+            - poll-delay
+            - revert-delay
+            - timeout
+            - keepalive
+            - max-patch
+    CONFIG_GET
+        Get config from server. The server will respond with a CONFIG packet.
+        Arguments:
+        - 1 byte key size.
+        - ? byte key. the key is one of
+            - poll-delay
+            - revert-delay
+            - timeout
+            - keepalive
+            - max-patch
+        - 4 byte value (int32).
+    SHUTDOWN
+        Shutdown server.
+        Arguments:
+        - None.
 
 
 ## Client Responses
-
 These response types may only be sent to a client:
-
     SUCCESS
-
-        This is sent in response to one of the SUBMIT_JOB* packets. It
-        signifies to the client that a the server successfully received
-        the job and queued it to be run by a worker.
-
+        This is sent in response to one of the SUBMIT_JOB/DROP_FUNC/REMOVE_JOB/CONFIG_SET
+        packets. It signifies to the client that a the server successfully
+        received the job and queued it to be run by a worker.
         Arguments:
         - None.
-
+    CONFIG
+        This is sent in response to one of the CONFIG_GET packets.
+        Arguments:
+        - 4 byte value (int32).
 
 ## Worker Requests
-
 These request types may only be sent by a worker:
-
-    CAN_DO
-
+    BROADCAST
         This is sent to notify the server that the worker is able to
         perform the given function. The worker is then put on a list to be
         woken up whenever the job server receives a job for that function.
-
         Arguments:
-        - Function name.
-
+        - 1 byte func size
+        - ? byte func name
+    CAN_DO
+        This is sent to notify the server that the worker is able to
+        perform the given function. The worker is then put on a list to be
+        woken up whenever the job server receives a job for that function.
+        Arguments:
+        - 1 byte func size
+        - ? byte func name
     CANT_DO
-
-         This is sent to notify the server that the worker is no longer
-         able to perform the given function.
-
-         Arguments:
-         - Function name.
-
+        This is sent to notify the server that the worker is no longer
+        able to perform the given function.
+        Arguments:
+        - 1 byte func size
+        - ? byte func name
     SLEEP
-
         This is sent to notify the server that the worker is about to
         sleep, and that it should be woken up with a NOOP packet if a
         job comes in for a function the worker is able to perform.
-
         Arguments:
         - None.
-
     GRAB_JOB
-
         This is sent to the server to request any available jobs on the
         queue. The server will respond with either NO_JOB or JOB_ASSIGN,
         depending on whether a job is available.
-
         Arguments:
         - None.
-
     WORK_DONE
-
         This is to notify the server that the job completed successfully.
-
         Arguments:
-        - NULL byte terminated job handle.
-        - Opaque data that is returned to the client as a response.
-
+        - ? byte handle
+        - ? byte data
     WORK_FAIL
-
         This is to notify the server that the job failed.
-
         Arguments:
-        - Job handle.
-
+        - ? byte handle
     SCHED_LATER
-
         This is to notify the server to do the job on next time.
-
         Arguments:
-        - Job handle.
-        - Time delay.
-
+        - ? byte handle
+        - 8 byte time delay
+        - 2 byte step counter
 
 ## Worker Responses
-
 These response types may only be sent to a worker:
-
     NOOP
-
         This is used to wake up a sleeping worker so that it may grab a
         pending job.
-
         Arguments:
         - None.
-
     NO_JOB
-
         This is given in response to a GRAB_JOB request to notify the
         worker there are no pending jobs that need to run.
-
         Arguments:
         - None.
-
     JOB_ASSIGN
-
         This is given in response to a GRAB_JOB request to give the worker
         information needed to run the job. All communication about the
         job (such as status updates and completion response) should use
         the handle, and the worker should run the given function with
         the argument.
-
         Arguments:
-        - JSON byte job object.
+        - 1 byte func size
+        - ? byte func name
+        - 1 byte name size
+        - ? byte name
+        - 4 byte workload size
+        - ? byte workload
+        - 8 byte sched time (unix time, int64)
+        - 1 byte job version
+            - #  version
+            - 0  Ver0
+            - 1  Ver1
 
+        Version Spec:
+            Ver0:
+            - None
+            Ver1:
+            - 4 byte run count           this assign by worker
 */
 package protocol
