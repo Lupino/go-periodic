@@ -11,7 +11,8 @@ type Job struct {
 	Func    string // The job function reffer on worker function
 	Args    string // Job args
 	SchedAt int64  // When to sched the job.
-	Counter int64  // The job run counter
+	Counter int32  // The job run counter
+	Timeout int32  // The job run timeout
 }
 
 // NewJob create a job from json bytes
@@ -47,7 +48,15 @@ func NewJob(payload []byte) (job Job, err error) {
 
 	if ver == 1 {
 		h32 = payload[0:4]
-		job.Counter = int64(binary.BigEndian.Uint32(h32))
+		job.Counter = int32(binary.BigEndian.Uint32(h32))
+	} else if ver == 2 {
+		h32 = payload[0:4]
+		job.Timeout = int32(binary.BigEndian.Uint32(h32))
+	} else if ver == 3 {
+		h32 = payload[0:4]
+		job.Counter = int32(binary.BigEndian.Uint32(h32))
+		h32 = payload[4:8]
+		job.Timeout = int32(binary.BigEndian.Uint32(h32))
 	}
 
 	return
@@ -71,7 +80,11 @@ func (job Job) Bytes() []byte {
 	buf.Write(h64)
 
 	var ver = 0
-	if job.Counter > 0 {
+	if job.Counter > 0 && job.Timeout > 0 {
+		ver = 3
+	} else if job.Timeout > 0 {
+		ver = 2
+	} else if job.Counter > 0 {
 		ver = 1
 	}
 
@@ -79,6 +92,14 @@ func (job Job) Bytes() []byte {
 
 	if ver == 1 {
 		binary.BigEndian.PutUint32(h32, uint32(job.Counter))
+		buf.Write(h32)
+	} else if ver == 2 {
+		binary.BigEndian.PutUint32(h32, uint32(job.Timeout))
+		buf.Write(h32)
+	} else if ver == 3 {
+		binary.BigEndian.PutUint32(h32, uint32(job.Counter))
+		buf.Write(h32)
+		binary.BigEndian.PutUint32(h32, uint32(job.Timeout))
 		buf.Write(h32)
 	}
 
