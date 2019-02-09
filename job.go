@@ -122,3 +122,12 @@ func (j *Job) Release(name string) error {
 	agent.Send(protocol.RELEASE, buf.Bytes())
 	return nil
 }
+
+// WithLock with lock
+func (j *Job) WithLock(name string, count int, task func()) {
+    _, acquired := j.Acquire(name, count)
+    if acquired {
+        task()
+        j.Release(name)
+    }
+}
