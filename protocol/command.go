@@ -63,6 +63,13 @@ const (
 	CONFIG Command = 24 // server
 	// RUNJOB run job and got a result
 	RUNJOB Command = 25 // client
+
+	// ACQUIRED acquire true or false
+	ACQUIRED Command = 26
+	// ACQUIRE acquire the lock
+	ACQUIRE Command = 27
+	// RELEASE release the lock
+	RELEASE Command = 28
 )
 
 // Bytes convert command to byte
@@ -124,6 +131,12 @@ func (c Command) String() string {
 		return "CONFIG"
 	case RUNJOB:
 		return "RUNJOB"
+	case ACQUIRED:
+		return "ACQUIRED"
+	case ACQUIRE:
+		return "ACQUIRE"
+	case RELEASE:
+		return "RELEASE"
 	}
 	panic("Unknow Command " + strconv.Itoa(int(c)))
 }

@@ -85,3 +85,40 @@ func (j *Job) SchedLater(opts ...int) error {
 	agent.Send(protocol.SCHEDLATER, buf.Bytes())
 	return nil
 }
+
+// Acquire acquire the lock from periodic server
+func (j *Job) Acquire(name string, count int) (error, bool) {
+	agent := j.bc.NewAgent()
+	defer j.bc.RemoveAgent(agent.ID)
+
+	buf := bytes.NewBuffer(nil)
+	buf.WriteByte(byte(len(name)))
+	buf.WriteString(name)
+
+	h16 := make([]byte, 2)
+	binary.BigEndian.PutUint16(h16, uint16(count))
+	buf.Write(h16)
+	buf.Write(j.Handle)
+
+	agent.Send(protocol.ACQUIRE, buf.Bytes())
+
+	ret, data, _ := agent.Receive()
+	if ret == protocol.ACQUIRED && data[0] == 1 {
+		return nil, true
+	}
+	return nil, false
+}
+
+// Release release lock
+func (j *Job) Release(name string) error {
+	agent := j.bc.NewAgent()
+	defer j.bc.RemoveAgent(agent.ID)
+
+	buf := bytes.NewBuffer(nil)
+	buf.WriteByte(byte(len(name)))
+	buf.WriteString(name)
+	buf.Write(j.Handle)
+
+	agent.Send(protocol.RELEASE, buf.Bytes())
+	return nil
+}
