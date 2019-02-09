@@ -19,23 +19,25 @@ type Job struct {
 
 // NewJob create a job
 func NewJob(bc *BaseClient, data []byte) (job Job, err error) {
-	var h byte
-	h = data[0]
-
-	handle := data[0 : h+1]
-
 	var raw types.Job
-	raw, err = types.NewJob(data[h+1:])
+	raw, err = types.NewJob(data)
 	if err != nil {
 		return
 	}
+
+	buf := bytes.NewBuffer(nil)
+	buf.WriteByte(byte(len(raw.Func)))
+	buf.WriteString(raw.Func)
+	buf.WriteByte(byte(len(raw.Name)))
+	buf.WriteString(raw.Name)
+
 	job = Job{
 		bc:       bc,
 		Raw:      raw,
 		FuncName: raw.Func,
 		Name:     raw.Name,
 		Args:     raw.Args,
-		Handle:   handle,
+		Handle:   buf.Bytes(),
 	}
 	return
 }
