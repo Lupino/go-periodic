@@ -125,9 +125,9 @@ func (j *Job) Release(name string) error {
 
 // WithLock with lock
 func (j *Job) WithLock(name string, count int, task func()) {
-    _, acquired := j.Acquire(name, count)
-    if acquired {
-        task()
-        j.Release(name)
-    }
+	_, acquired := j.Acquire(name, count)
+	if acquired {
+		task()
+		j.Release(name)
+	}
 }
