@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"net"
 	"sync"
 )
@@ -11,6 +12,8 @@ import (
 var (
 	// ErrMagicNotMatch error on magic not match
 	ErrMagicNotMatch = errors.New("Magic not match")
+	// ErrCRCNotMatch error on crc not match
+	ErrCRCNotMatch = errors.New("CRC not match")
 	// MagicRequest a request magic
 	MagicRequest = []byte("\x00REQ")
 	// MagicResponse a response magic
@@ -66,7 +69,22 @@ func (conn *Conn) Receive() (rdata []byte, rerr error) {
 
 	length := binary.BigEndian.Uint32(header)
 
+	crc, err := conn.receive(4)
+	if err != nil {
+		return nil, err
+	}
+
+	crcn := binary.BigEndian.Uint32(crc)
+
 	rdata, rerr = conn.receive(length)
+
+	if rerr != nil {
+		return nil, rerr
+	}
+
+	if crc32.ChecksumIEEE(rdata) != crcn {
+		return nil, ErrCRCNotMatch
+	}
 
 	return
 }
@@ -91,11 +109,18 @@ func (conn *Conn) Send(data []byte) error {
 	var header = make([]byte, 4)
 	binary.BigEndian.PutUint32(header, uint32(len(data)))
 
+	var crc = make([]byte, 4)
+	binary.BigEndian.PutUint32(crc, crc32.ChecksumIEEE(data))
+
 	if err := conn.write(conn.ResponseMagic); err != nil {
 		return err
 	}
 
 	if err := conn.write(header); err != nil {
+		return err
+	}
+
+	if err := conn.write(crc); err != nil {
 		return err
 	}
 
