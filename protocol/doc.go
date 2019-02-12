@@ -34,6 +34,33 @@ will then execute it.
 All communication between workers or clients and the periodic server
 are binary.
 
+## Client type
+
+Once connected the client send it's type, and server will respond the connction id.
+Request:
+    4 byte magic code   - This is either "\0REQ" for requests or "\0RES"
+                          for responses.
+    4 byte size         - A big-endian (network-order) integer containing
+                          the size of the data being sent.
+    4 byte crc32        - A big-endian (network-order) integer containing
+                          the crc32 of the data being sent.
+    1 byte command      - A big-endian (network-order) integer containing
+                          an enumerated packet command. Possible values are:
+                        #   Name             Type
+                        1   TYPE_CLIENT      Client
+                        2   TYPE_WORKER      Worker
+
+Response:
+    4 byte magic code       - This is either "\0REQ" for requests or "\0RES"
+                              for responses.
+    4 byte size             - A big-endian (network-order) integer containing
+                              the size of the data being sent.
+    4 byte crc32        - A big-endian (network-order) integer containing
+                          the crc32 of the data being sent.
+    ? byte connection id    - A binary connection id
+
+
+
 ## Binary Packet
 
 Requests and responses are encapsulated by a binary packet. A binary
@@ -43,8 +70,10 @@ header is:
                           for responses.
     4 byte size         - A big-endian (network-order) integer containing
                           the size of the data being sent.
-    4 byte  message id  - A client unique message id.
-    1 byte  command     - A big-endian (network-order) integer containing
+    4 byte crc32        - A big-endian (network-order) integer containing
+                          the crc32 of the data being sent.
+    4 byte message id   - A client unique message id.
+    1 byte command      - A big-endian (network-order) integer containing
                           an enumerated packet command. Possible values are:
                         #   Name          Type
                         0   NOOP          Client/Worker
@@ -96,44 +125,12 @@ These request types may only be sent by a client:
         A client issues one of these when a job needs to be run. The
         server will respond with a SUCCESS packet.
         Arguments:
-        - 1 byte func size
-        - ? byte func name
-        - 1 byte name size
-        - ? byte name
-        - 4 byte workload size
-        - ? byte workload
-        - 8 byte sched time (unix time, int64)
-        - 1 byte job version
-            - #  version
-            - 0  Ver0
-            - 1  Ver1
-
-        Version Spec:
-            Ver0:
-            - None
-            Ver1:
-            - 4 byte run count           this assign by worker
+        - Job binary packet
    RUN_JOB
         A client issues one of these when a job needs to be run. The
         server will respond with a binary packet.
         Arguments:
-        - 1 byte func size
-        - ? byte func name
-        - 1 byte name size
-        - ? byte name
-        - 4 byte workload size
-        - ? byte workload
-        - 8 byte sched time (unix time, int64)
-        - 1 byte job version
-            - #  version
-            - 0  Ver0
-            - 1  Ver1
-
-        Version Spec:
-            Ver0:
-            - None
-            Ver1:
-            - 4 byte run count           this assign by worker
+        - Job binary packet
     STATUS
         This sends back a list of all registered functions.  Next to
         each function is the number of jobs in the queue, the number of
@@ -251,6 +248,19 @@ These request types may only be sent by a worker:
         - ? byte handle
         - 8 byte time delay
         - 2 byte step counter
+    ACQUIRE
+        This is to acquire a lock from the server.
+        Arguments:
+        - 1 byte lock name size
+        - ? byte lock name
+        - 2 byte lock count
+        - ? byte handle
+    RELEASE
+        This is to release a lock to the server.
+        Arguments:
+        - 1 byte lock name size
+        - ? byte lock name
+        - ? byte handle
 
 ## Worker Responses
 These response types may only be sent to a worker:
@@ -271,22 +281,44 @@ These response types may only be sent to a worker:
         the handle, and the worker should run the given function with
         the argument.
         Arguments:
-        - 1 byte func size
-        - ? byte func name
-        - 1 byte name size
-        - ? byte name
-        - 4 byte workload size
-        - ? byte workload
-        - 8 byte sched time (unix time, int64)
-        - 1 byte job version
-            - #  version
-            - 0  Ver0
-            - 1  Ver1
+        - Job binary packet
+    ACQUIRED
+        This is to response to a ACQUIRE request. if true run the job, else skip.
+        Arguments:
+        - 1 byte 1 or 0
 
-        Version Spec:
-            Ver0:
-            - None
-            Ver1:
-            - 4 byte run count           this assign by worker
+## Job binary packets
+Job is encode with a binary packet:
+    - 1 byte func size
+    - ? byte func name
+    - 1 byte name size
+    - ? byte name
+    - 4 byte workload size
+    - ? byte workload
+    - 8 byte sched time (unix time, int64)
+    - 1 byte job version
+        - #  version
+        - 0  Ver0
+        - 1  Ver1
+        - 2  Ver2
+        - 3  Ver3
+
+    Version Spec:
+        Ver0:
+        - None
+        Ver1:
+        - 4 byte run count           this assign by worker
+        Ver2:
+        - 4 byte timeout
+        Ver3:
+        - 4 byte run count           this assign by worker
+        - 4 byte timeout
+
+## Job handle packets
+Job handle is encode with a binary packet:
+    - 1 byte func size
+    - ? byte func name
+    - 1 byte name size
+    - ? byte name
 */
 package protocol
