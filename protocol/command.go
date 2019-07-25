@@ -70,6 +70,11 @@ const (
 	ACQUIRE Command = 27
 	// RELEASE release the lock
 	RELEASE Command = 28
+
+	// NO_WORKER on run job when no worker return this
+	NO_WORKER = 29 // server
+	// DATA run job data
+	DATA = 30 // server
 )
 
 // Bytes convert command to byte
@@ -137,6 +142,10 @@ func (c Command) String() string {
 		return "ACQUIRE"
 	case RELEASE:
 		return "RELEASE"
+	case NO_WORKER:
+		return "NO_WORKER"
+	case DATA:
+		return "DATA"
 	}
 	panic("Unknow Command " + strconv.Itoa(int(c)))
 }
