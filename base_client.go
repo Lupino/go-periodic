@@ -29,6 +29,16 @@ func NewBaseClient(conn net.Conn, clientType protocol.ClientType) *BaseClient {
 	return c
 }
 
+// Init init the base client.
+func (c *BaseClient) Init(conn net.Conn, clientType protocol.ClientType) {
+	c.agents = make(map[string]Feeder)
+	c.alive = true
+	c.locker = new(sync.RWMutex)
+	c.conn = protocol.NewClientConn(conn)
+	c.conn.Send(clientType.Bytes())
+	c.conn.Receive()
+}
+
 // RemoveAgent remove a agent by a agentID
 func (c *BaseClient) RemoveAgent(agentID []byte) {
 	c.locker.Lock()

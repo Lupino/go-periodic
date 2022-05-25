@@ -14,7 +14,7 @@ import (
 
 // Client defined a client.
 type Client struct {
-	bc *BaseClient
+	BaseClient
 }
 
 // NewClient create a client.
@@ -33,19 +33,19 @@ func (c *Client) Connect(addr string, key ...string) error {
 		if keyBuf, err := ioutil.ReadFile(key[0]); err != nil {
 			return err
 		} else {
-			c.bc = NewBaseClient(protocol.NewXORConn(conn, keyBuf), protocol.TYPECLIENT)
+			c.Init(protocol.NewXORConn(conn, keyBuf), protocol.TYPECLIENT)
 		}
 	} else {
-		c.bc = NewBaseClient(conn, protocol.TYPECLIENT)
+		c.Init(conn, protocol.TYPECLIENT)
 	}
-	go c.bc.ReceiveLoop()
+	go c.ReceiveLoop()
 	return nil
 }
 
 // Ping a periodic server.
 func (c *Client) Ping() bool {
-	agent := c.bc.NewAgent()
-	defer c.bc.RemoveAgent(agent.ID)
+	agent := c.NewAgent()
+	defer c.RemoveAgent(agent.ID)
 	agent.Send(protocol.PING, nil)
 	ret, _, _ := agent.Receive()
 	if ret == protocol.PONG {
@@ -60,8 +60,8 @@ func (c *Client) Ping() bool {
 //    "args": args,
 //  }
 func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error {
-	agent := c.bc.NewAgent()
-	defer c.bc.RemoveAgent(agent.ID)
+	agent := c.NewAgent()
+	defer c.RemoveAgent(agent.ID)
 	job := types.Job{
 		Func: funcName,
 		Name: name,
@@ -86,8 +86,8 @@ func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error 
 //    "args": args,
 //  }
 func (c *Client) RunJob(funcName, name string, opts map[string]string) (err error, ret []byte) {
-	agent := c.bc.NewAgent()
-	defer c.bc.RemoveAgent(agent.ID)
+	agent := c.NewAgent()
+	defer c.RemoveAgent(agent.ID)
 	job := types.Job{
 		Func: funcName,
 		Name: name,
@@ -105,8 +105,8 @@ func (c *Client) RunJob(funcName, name string, opts map[string]string) (err erro
 
 // Status return a status from periodic server.
 func (c *Client) Status() ([][]string, error) {
-	agent := c.bc.NewAgent()
-	defer c.bc.RemoveAgent(agent.ID)
+	agent := c.NewAgent()
+	defer c.RemoveAgent(agent.ID)
 	agent.Send(protocol.STATUS, nil)
 
 	_, data, _ := agent.Receive()
@@ -126,8 +126,8 @@ func (c *Client) Status() ([][]string, error) {
 
 // DropFunc drop unuself function from periodic server.
 func (c *Client) DropFunc(Func string) error {
-	agent := c.bc.NewAgent()
-	defer c.bc.RemoveAgent(agent.ID)
+	agent := c.NewAgent()
+	defer c.RemoveAgent(agent.ID)
 	agent.Send(protocol.DROPFUNC, encode8(Func))
 	ret, data, _ := agent.Receive()
 	if ret == protocol.SUCCESS {
@@ -138,8 +138,8 @@ func (c *Client) DropFunc(Func string) error {
 
 // RemoveJob to periodic server.
 func (c *Client) RemoveJob(funcName, name string) error {
-	agent := c.bc.NewAgent()
-	defer c.bc.RemoveAgent(agent.ID)
+	agent := c.NewAgent()
+	defer c.RemoveAgent(agent.ID)
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(byte(len(funcName)))
 	buf.WriteString(funcName)
@@ -151,9 +151,4 @@ func (c *Client) RemoveJob(funcName, name string) error {
 		return nil
 	}
 	return fmt.Errorf("RemoveJob error: %s", data)
-}
-
-// Close the client.
-func (c *Client) Close() {
-	c.bc.Close()
 }
