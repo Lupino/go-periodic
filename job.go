@@ -9,7 +9,7 @@ import (
 
 // Job defined a job type.
 type Job struct {
-	bc       *Worker
+	Worker   *Worker
 	Raw      types.Job
 	FuncName string
 	Name     string
@@ -32,7 +32,7 @@ func NewJob(bc *Worker, data []byte) (job Job, err error) {
 	buf.WriteString(raw.Name)
 
 	job = Job{
-		bc:       bc,
+		Worker:   bc,
 		Raw:      raw,
 		FuncName: raw.Func,
 		Name:     raw.Name,
@@ -44,21 +44,17 @@ func NewJob(bc *Worker, data []byte) (job Job, err error) {
 
 // Done tell periodic server the job done.
 func (j *Job) Done(data ...[]byte) error {
-	agent := j.bc.NewAgent()
-	defer j.bc.RemoveAgent(agent.ID)
 	var dat = []byte("")
 	if len(data) == 1 {
 		dat = data[0]
 	}
-	agent.Send(protocol.WORKDONE, bytes.Join([][]byte{j.Handle, dat}, []byte("")))
+	j.Worker.sendCommand(protocol.WORKDONE, bytes.Join([][]byte{j.Handle, dat}, []byte("")))
 	return nil
 }
 
 // Fail tell periodic server the job fail.
 func (j *Job) Fail() error {
-	agent := j.bc.NewAgent()
-	defer j.bc.RemoveAgent(agent.ID)
-	agent.Send(protocol.WORKFAIL, j.Handle)
+	j.Worker.sendCommand(protocol.WORKFAIL, j.Handle)
 	return nil
 }
 
@@ -67,8 +63,6 @@ func (j *Job) Fail() error {
 // SchedLater(delay, counter int) sched with a incr the counter
 func (j *Job) SchedLater(opts ...int) error {
 	delay := opts[0]
-	agent := j.bc.NewAgent()
-	defer j.bc.RemoveAgent(agent.ID)
 	buf := bytes.NewBuffer(nil)
 	buf.Write(j.Handle)
 	h64 := make([]byte, 8)
@@ -82,15 +76,12 @@ func (j *Job) SchedLater(opts ...int) error {
 		binary.BigEndian.PutUint16(h16, uint16(0))
 	}
 	buf.Write(h16)
-	agent.Send(protocol.SCHEDLATER, buf.Bytes())
+	j.Worker.sendCommand(protocol.SCHEDLATER, buf.Bytes())
 	return nil
 }
 
 // Acquire acquire the lock from periodic server
 func (j *Job) Acquire(name string, count int) (error, bool) {
-	agent := j.bc.NewAgent()
-	defer j.bc.RemoveAgent(agent.ID)
-
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(byte(len(name)))
 	buf.WriteString(name)
@@ -100,9 +91,8 @@ func (j *Job) Acquire(name string, count int) (error, bool) {
 	buf.Write(h16)
 	buf.Write(j.Handle)
 
-	agent.Send(protocol.ACQUIRE, buf.Bytes())
+	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.ACQUIRE, buf.Bytes())
 
-	ret, data, _ := agent.Receive()
 	if ret == protocol.ACQUIRED && data[0] == 1 {
 		return nil, true
 	}
@@ -111,15 +101,12 @@ func (j *Job) Acquire(name string, count int) (error, bool) {
 
 // Release release lock
 func (j *Job) Release(name string) error {
-	agent := j.bc.NewAgent()
-	defer j.bc.RemoveAgent(agent.ID)
-
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(byte(len(name)))
 	buf.WriteString(name)
 	buf.Write(j.Handle)
 
-	agent.Send(protocol.RELEASE, buf.Bytes())
+	j.Worker.sendCommand(protocol.RELEASE, buf.Bytes())
 	return nil
 }
 

@@ -1,12 +1,8 @@
 package periodic
 
 import (
-	"github.com/Lupino/go-periodic/protocol"
-	"io/ioutil"
-	// "log"
 	"bytes"
-	"net"
-	"strings"
+	"github.com/Lupino/go-periodic/protocol"
 	"time"
 )
 
@@ -23,38 +19,6 @@ func NewWorker(size int) *Worker {
 	w.tasks = make(map[string]func(Job))
 	w.size = size
 	return w
-}
-
-// Connect a periodic server.
-func (w *Worker) Connect(addr string, key ...string) error {
-	parts := strings.SplitN(addr, "://", 2)
-	conn, err := net.Dial(parts[0], parts[1])
-	if err != nil {
-		return err
-	}
-	if len(key) > 0 && len(key[0]) > 0 {
-		if keyBuf, err := ioutil.ReadFile(key[0]); err != nil {
-			return err
-		} else {
-			w.Init(protocol.NewXORConn(conn, keyBuf), protocol.TYPEWORKER)
-		}
-	} else {
-		w.Init(conn, protocol.TYPEWORKER)
-	}
-	go w.ReceiveLoop()
-	return nil
-}
-
-// Ping a periodic server.
-func (w *Worker) Ping() bool {
-	agent := w.NewAgent()
-	defer w.RemoveAgent(agent.ID)
-	agent.Send(protocol.PING, nil)
-	ret, _, _ := agent.Receive()
-	if ret == protocol.PONG {
-		return true
-	}
-	return false
 }
 
 // GrabJob from periodic server.
@@ -96,27 +60,21 @@ func encode8(dat string) []byte {
 
 // AddFunc to periodic server.
 func (w *Worker) AddFunc(funcName string, task func(Job)) error {
-	agent := w.NewAgent()
-	defer w.RemoveAgent(agent.ID)
-	agent.Send(protocol.CANDO, encode8(funcName))
+	w.sendCommand(protocol.CANDO, encode8(funcName))
 	w.tasks[funcName] = task
 	return nil
 }
 
 // Broadcast to all worker.
 func (w *Worker) Broadcast(funcName string, task func(Job)) error {
-	agent := w.NewAgent()
-	defer w.RemoveAgent(agent.ID)
-	agent.Send(protocol.BROADCAST, encode8(funcName))
+	w.sendCommand(protocol.BROADCAST, encode8(funcName))
 	w.tasks[funcName] = task
 	return nil
 }
 
 // RemoveFunc to periodic server.
 func (w *Worker) RemoveFunc(funcName string) error {
-	agent := w.NewAgent()
-	defer w.RemoveAgent(agent.ID)
-	agent.Send(protocol.CANTDO, encode8(funcName))
+	w.sendCommand(protocol.CANTDO, encode8(funcName))
 	delete(w.tasks, funcName)
 	return nil
 }
