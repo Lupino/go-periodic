@@ -8,7 +8,7 @@ import (
 
 // Worker defined a client.
 type Worker struct {
-	BaseClient
+	Client
 	tasks map[string]func(Job)
 	size  int
 }
