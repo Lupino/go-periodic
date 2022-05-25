@@ -95,7 +95,7 @@ func (w *Worker) work() {
 	var job Job
 	var task func(Job)
 	var ok bool
-	var agent = w.NewAgent()
+	var agent = w.newAgent()
 	var ch = make(chan Job, 100)
 	var waiter = make(chan bool, 10)
 	w.GrabJob(agent, ch, waiter)

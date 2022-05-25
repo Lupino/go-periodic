@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 // BaseClient defined base client.
@@ -23,8 +24,8 @@ type BaseClient struct {
 	alive  bool
 }
 
-// Init init the base client.
-func (c *BaseClient) Init(conn net.Conn, clientType protocol.ClientType) {
+// initClient init the base client.
+func (c *BaseClient) initClient(conn net.Conn, clientType protocol.ClientType) {
 	c.agents = make(map[string]Feeder)
 	c.alive = true
 	c.locker = new(sync.RWMutex)
@@ -33,15 +34,15 @@ func (c *BaseClient) Init(conn net.Conn, clientType protocol.ClientType) {
 	c.conn.Receive()
 }
 
-// RemoveAgent remove a agent by a agentID
-func (c *BaseClient) RemoveAgent(agentID []byte) {
+// removeAgent remove a agent by a agentID
+func (c *BaseClient) removeAgent(agentID []byte) {
 	c.locker.Lock()
 	defer c.locker.Unlock()
 	delete(c.agents, string(agentID))
 }
 
-// NewAgent create a new agent with an shortid
-func (c *BaseClient) NewAgent() *Agent {
+// newAgent create a new agent with an shortid
+func (c *BaseClient) newAgent() *Agent {
 	c.locker.Lock()
 	defer c.locker.Unlock()
 	agentID, err := shortid.Generate()
@@ -55,21 +56,20 @@ func (c *BaseClient) NewAgent() *Agent {
 }
 
 func (c *BaseClient) sendCommandAndReceive(cmd protocol.Command, data []byte) (protocol.Command, []byte, error) {
-	agent := c.NewAgent()
-	defer c.RemoveAgent(agent.ID)
+	agent := c.newAgent()
+	defer c.removeAgent(agent.ID)
 	agent.Send(cmd, data)
 	return agent.Receive()
 }
 
 func (c *BaseClient) sendCommand(cmd protocol.Command, data []byte) {
-	agent := c.NewAgent()
-	defer c.RemoveAgent(agent.ID)
+	agent := c.newAgent()
+	defer c.removeAgent(agent.ID)
 	agent.Send(cmd, data)
 }
 
-// ReceiveLoop a loop on receive data.
-func (c *BaseClient) ReceiveLoop() {
-	c.alive = true
+// receiveLoop a loop on receive data.
+func (c *BaseClient) receiveLoop() {
 	for c.alive {
 		payload, err := c.conn.Receive()
 		if err != nil {
@@ -88,6 +88,14 @@ func (c *BaseClient) ReceiveLoop() {
 	}
 }
 
+// checkHealth check connection health.
+func (c *BaseClient) checkHealth() {
+	for c.alive {
+		c.Ping()
+		time.Sleep(1)
+	}
+}
+
 // Connect a periodic server.
 func (c *BaseClient) Connect(addr string, key ...string) error {
 	parts := strings.SplitN(addr, "://", 2)
@@ -99,12 +107,13 @@ func (c *BaseClient) Connect(addr string, key ...string) error {
 		if keyBuf, err := ioutil.ReadFile(key[0]); err != nil {
 			return err
 		} else {
-			c.Init(protocol.NewXORConn(conn, keyBuf), protocol.TYPECLIENT)
+			c.initClient(protocol.NewXORConn(conn, keyBuf), protocol.TYPECLIENT)
 		}
 	} else {
-		c.Init(conn, protocol.TYPECLIENT)
+		c.initClient(conn, protocol.TYPECLIENT)
 	}
-	go c.ReceiveLoop()
+	go c.receiveLoop()
+	go c.checkHealth()
 	return nil
 }
 
