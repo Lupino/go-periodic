@@ -96,7 +96,7 @@ func (c *Client) RunJob(funcName, name string, opts map[string]string) (err erro
 		job.Args = args
 	}
 	agent.Send(protocol.RUNJOB, job.Bytes())
-	cmd, ret, err = agent.Receive()
+	cmd, ret, err := agent.Receive()
 	if cmd == protocol.NO_WORKER {
 		err = fmt.Errorf("Error: no worker %s", funcName)
 	}
