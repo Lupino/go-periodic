@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -55,11 +54,12 @@ func (c *Client) Ping() bool {
 }
 
 // SubmitJob to periodic server.
-//  opts = map[string]string{
+//  opts = map[string]interface{}{
 //    "schedat": schedat,
 //    "args": args,
+//    "timeout": timeout,
 //  }
-func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error {
+func (c *Client) SubmitJob(funcName, name string, opts map[string]interface{}) error {
 	agent := c.NewAgent()
 	defer c.RemoveAgent(agent.ID)
 	job := types.Job{
@@ -67,11 +67,13 @@ func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error 
 		Name: name,
 	}
 	if args, ok := opts["args"]; ok {
-		job.Args = args
+		job.Args, _ = args.(string)
 	}
 	if schedat, ok := opts["schedat"]; ok {
-		i64, _ := strconv.ParseInt(schedat, 10, 64)
-		job.SchedAt = i64
+		job.SchedAt, _ = schedat.(int64)
+	}
+	if timeout, ok := opts["timeout"]; ok {
+		job.Timeout, _ = timeout.(int32)
 	}
 	agent.Send(protocol.SUBMITJOB, job.Bytes())
 	ret, data, _ := agent.Receive()
@@ -82,10 +84,11 @@ func (c *Client) SubmitJob(funcName, name string, opts map[string]string) error 
 }
 
 // RunJob to periodic server and get an result.
-//  opts = map[string]string{
+//  opts = map[string]interface{}{
 //    "args": args,
+//    "timeout": timeout,
 //  }
-func (c *Client) RunJob(funcName, name string, opts map[string]string) (err error, ret []byte) {
+func (c *Client) RunJob(funcName, name string, opts map[string]interface{}) (err error, ret []byte) {
 	agent := c.NewAgent()
 	defer c.RemoveAgent(agent.ID)
 	job := types.Job{
@@ -93,7 +96,12 @@ func (c *Client) RunJob(funcName, name string, opts map[string]string) (err erro
 		Name: name,
 	}
 	if args, ok := opts["args"]; ok {
-		job.Args = args
+		job.Args, _ = args.(string)
+	}
+	if timeout, ok := opts["timeout"]; ok {
+		if job.Timeout, ok = timeout.(int32); !ok {
+			job.Timeout = 10
+		}
 	}
 	agent.Send(protocol.RUNJOB, job.Bytes())
 	cmd, ret, err := agent.Receive()
