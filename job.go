@@ -9,7 +9,7 @@ import (
 
 // Job defined a job type.
 type Job struct {
-	bc       *BaseClient
+	bc       *Worker
 	Raw      types.Job
 	FuncName string
 	Name     string
@@ -18,7 +18,7 @@ type Job struct {
 }
 
 // NewJob create a job
-func NewJob(bc *BaseClient, data []byte) (job Job, err error) {
+func NewJob(bc *Worker, data []byte) (job Job, err error) {
 	var raw types.Job
 	raw, err = types.NewJob(data)
 	if err != nil {
