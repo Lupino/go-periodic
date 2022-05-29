@@ -6,11 +6,6 @@ import (
 	"sync"
 )
 
-type Feeder interface {
-	FeedCommand(protocol.Command, []byte)
-	FeedError(error)
-}
-
 type data struct {
 	data []byte
 	cmd  protocol.Command

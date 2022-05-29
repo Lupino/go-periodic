@@ -11,6 +11,7 @@ type Worker struct {
 	Client
 	tasks map[string]func(Job)
 	size  int
+	ch    chan Job
 }
 
 // NewWorker create a client.
@@ -18,37 +19,32 @@ func NewWorker(size int) *Worker {
 	w := new(Worker)
 	w.tasks = make(map[string]func(Job))
 	w.size = size
+	w.ch = make(chan Job, size)
+	w.processTask = func(msgId string, data []byte) {
+		agent := NewAgent(w.conn, []byte(msgId))
+		agent.Send(protocol.GRABJOB, nil)
+		job, err := NewJob(w, data)
+		if err != nil {
+			return
+		}
+		w.ch <- job
+	}
 	return w
 }
 
 // GrabJob from periodic server.
-func (w *Worker) GrabJob(agent *Agent, ch chan Job, waiter chan bool) {
-	go func() {
-		for {
-			ret, data, _ := agent.Receive()
-			if ret != protocol.JOBASSIGN {
-				continue
-			}
-			j, e := NewJob(w, data)
-			if e != nil {
-				continue
-			}
-			ch <- j
+func (w *Worker) GrabJob(agent *Agent, waiter chan bool) {
+	for {
+		if len(w.ch) == 0 {
+			agent.Send(protocol.GRABJOB, nil)
 		}
-	}()
-	go func() {
-		for {
-			if len(ch) == 0 {
-				agent.Send(protocol.GRABJOB, nil)
-			}
-			select {
-			case <-waiter:
-				break
-			case <-time.After(1 * time.Second):
-				break
-			}
+		select {
+		case <-waiter:
+			break
+		case <-time.After(1 * time.Second):
+			break
 		}
-	}()
+	}
 }
 
 func encode8(dat string) []byte {
@@ -96,11 +92,10 @@ func (w *Worker) work() {
 	var task func(Job)
 	var ok bool
 	var agent = w.newAgent()
-	var ch = make(chan Job, 100)
-	var waiter = make(chan bool, 10)
-	w.GrabJob(agent, ch, waiter)
+	var waiter = make(chan bool, 1)
+	go w.GrabJob(agent, waiter)
 	for w.alive {
-		job = <-ch
+		job = <-w.ch
 		task, ok = w.tasks[job.FuncName]
 		if !ok {
 			w.RemoveFunc(job.FuncName)

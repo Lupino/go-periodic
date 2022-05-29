@@ -18,10 +18,11 @@ import (
 
 // Client defined base client.
 type Client struct {
-	agents map[string]Feeder
-	conn   protocol.Conn
-	locker *sync.RWMutex
-	alive  bool
+	agents      map[string]*Agent
+	conn        protocol.Conn
+	locker      *sync.RWMutex
+	alive       bool
+	processTask func(string, []byte)
 }
 
 // NewClient create a client.
@@ -31,7 +32,7 @@ func NewClient() *Client {
 
 // initClient init the base client.
 func (c *Client) initClient(conn net.Conn, clientType protocol.ClientType) {
-	c.agents = make(map[string]Feeder)
+	c.agents = make(map[string]*Agent)
 	c.alive = true
 	c.locker = new(sync.RWMutex)
 	c.conn = protocol.NewClientConn(conn)
@@ -91,6 +92,10 @@ func (c *Client) receiveLoop() {
 			log.Fatal(err)
 		}
 		agentID, cmd, data := protocol.ParseCommand(payload)
+		if cmd == protocol.JOBASSIGN {
+			c.processTask(string(agentID), data)
+			continue
+		}
 		c.locker.Lock()
 		agent, ok := c.agents[string(agentID)]
 		if !ok {
