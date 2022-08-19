@@ -112,7 +112,7 @@ func (c *Client) receiveLoop() {
 func (c *Client) checkHealth() {
 	for c.alive {
 		c.Ping()
-		time.Sleep(1)
+		time.Sleep(time.Second)
 	}
 }
 
