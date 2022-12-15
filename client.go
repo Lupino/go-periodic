@@ -147,11 +147,12 @@ func (c *Client) Ping() bool {
 }
 
 // SubmitJob to periodic server.
-//  opts = map[string]interface{}{
-//    "schedat": schedat,
-//    "args": args,
-//    "timeout": timeout,
-//  }
+//
+//	opts = map[string]interface{}{
+//	  "schedat": schedat,
+//	  "args": args,
+//	  "timeout": timeout,
+//	}
 func (c *Client) SubmitJob(funcName, name string, opts map[string]interface{}) error {
 	job := types.Job{
 		Func: funcName,
@@ -174,10 +175,11 @@ func (c *Client) SubmitJob(funcName, name string, opts map[string]interface{}) e
 }
 
 // RunJob to periodic server and get an result.
-//  opts = map[string]interface{}{
-//    "args": args,
-//    "timeout": timeout,
-//  }
+//
+//	opts = map[string]interface{}{
+//	  "args": args,
+//	  "timeout": timeout,
+//	}
 func (c *Client) RunJob(funcName, name string, opts map[string]interface{}) (err error, ret []byte) {
 	job := types.Job{
 		Func: funcName,

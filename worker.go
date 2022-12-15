@@ -3,23 +3,23 @@ package periodic
 import (
 	"bytes"
 	"github.com/Lupino/go-periodic/protocol"
+	"github.com/gammazero/deque"
+	"github.com/gammazero/workerpool"
 	"time"
 )
 
 // Worker defined a client.
 type Worker struct {
 	Client
-	tasks map[string]func(Job)
-	size  int
-	ch    chan Job
+	tasks      map[string]func(Job)
+	agentQueue *deque.Deque[*Agent]
+	wp         *workerpool.WorkerPool
 }
 
 // NewWorker create a client.
 func NewWorker(size int) *Worker {
 	w := new(Worker)
 	w.tasks = make(map[string]func(Job))
-	w.size = size
-	w.ch = make(chan Job, size)
 	w.processTask = func(msgId string, data []byte) {
 		agent := NewAgent(w.conn, []byte(msgId))
 		agent.Send(protocol.GRABJOB, nil)
@@ -27,24 +27,26 @@ func NewWorker(size int) *Worker {
 		if err != nil {
 			return
 		}
-		w.ch <- job
+		task, ok := w.tasks[job.FuncName]
+		if ok {
+			w.wp.Submit(func() {
+				task(job)
+			})
+		} else {
+			w.RemoveFunc(job.FuncName)
+			job.Fail()
+		}
 	}
-	return w
-}
 
-// GrabJob from periodic server.
-func (w *Worker) GrabJob(agent *Agent, waiter chan bool) {
-	for {
-		if len(w.ch) == 0 {
-			agent.Send(protocol.GRABJOB, nil)
-		}
-		select {
-		case <-waiter:
-			break
-		case <-time.After(1 * time.Second):
-			break
-		}
+	w.agentQueue = deque.New[*Agent](size)
+	w.wp = workerpool.New(size)
+
+	for i := 1; i < size; i++ {
+		var agent = w.newAgent()
+		w.agentQueue.PushBack(agent)
 	}
+
+	return w
 }
 
 func encode8(dat string) []byte {
@@ -77,32 +79,15 @@ func (w *Worker) RemoveFunc(funcName string) error {
 
 // Work do the task.
 func (w *Worker) Work() {
-	if w.size < 1 {
-		w.size = 1
-	}
-	for i := 1; i < w.size; i++ {
-		go w.work()
-	}
-	w.work()
-}
-
-// work do the task.
-func (w *Worker) work() {
-	var job Job
-	var task func(Job)
-	var ok bool
-	var agent = w.newAgent()
-	var waiter = make(chan bool, 1)
-	go w.GrabJob(agent, waiter)
-	for w.alive {
-		job = <-w.ch
-		task, ok = w.tasks[job.FuncName]
-		if !ok {
-			w.RemoveFunc(job.FuncName)
-			job.Fail()
-			continue
+	for {
+		agent := w.agentQueue.PopFront()
+		w.agentQueue.PushBack(agent)
+		if w.wp.WaitingQueueSize() < 1 {
+			agent.Send(protocol.GRABJOB, nil)
 		}
-		task(job)
-		waiter <- true
+		select {
+		case <-time.After(1 * time.Second):
+			break
+		}
 	}
 }
