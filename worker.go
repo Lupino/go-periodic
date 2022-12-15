@@ -74,7 +74,7 @@ func (w *Worker) RemoveFunc(funcName string) error {
 
 // Work do the task.
 func (w *Worker) Work() {
-	for i := 1; i < size; i++ {
+	for i := 0; i < w.wp.Size(); i++ {
 		var agent = w.newAgent()
 		w.agentQueue.PushBack(agent)
 	}
