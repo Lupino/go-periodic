@@ -6,7 +6,7 @@ import (
 )
 
 // SubmitJob cli submit
-func SubmitJob(entryPoint, xor, funcName, name string, opts map[string]string) {
+func SubmitJob(entryPoint, xor, funcName, name string, opts map[string]interface{}) {
 	c := periodic.NewClient()
 	if err := c.Connect(entryPoint, xor); err != nil {
 		log.Fatal(err)

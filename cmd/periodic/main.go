@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"runtime"
-	"strconv"
 	"time"
 )
 
@@ -67,7 +66,7 @@ func main() {
 			Action: func(c *cli.Context) error {
 				var name = c.String("n")
 				var funcName = c.String("f")
-				var opts = map[string]string{
+				var opts = map[string]interface{}{
 					"args": c.String("args"),
 				}
 				if len(name) == 0 || len(funcName) == 0 {
@@ -77,7 +76,7 @@ func main() {
 				delay := c.Int("sched_later")
 				var now = time.Now()
 				var schedAt = int64(now.Unix()) + int64(delay)
-				opts["schedat"] = strconv.FormatInt(schedAt, 10)
+				opts["schedat"] = schedAt
 				subcmd.SubmitJob(c.GlobalString("H"), c.GlobalString("x"), funcName, name, opts)
 				return nil
 			},
