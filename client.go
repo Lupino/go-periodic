@@ -2,10 +2,10 @@ package periodic
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
-	"github.com/teris-io/shortid"
 	"io"
 	"io/ioutil"
 	"log"
@@ -22,6 +22,7 @@ type Client struct {
 	conn        protocol.Conn
 	locker      *sync.RWMutex
 	alive       bool
+	agentLastId uint32
 	processTask func(string, []byte)
 }
 
@@ -34,6 +35,7 @@ func NewClient() *Client {
 func (c *Client) initClient(conn net.Conn, clientType protocol.ClientType) {
 	c.agents = make(map[string]*Agent)
 	c.alive = true
+	c.agentLastId = 0
 	c.locker = new(sync.RWMutex)
 	c.conn = protocol.NewClientConn(conn)
 	c.conn.Send(clientType.Bytes())
@@ -61,13 +63,33 @@ func (c *Client) removeAgent(agentID []byte) {
 func (c *Client) newAgent() *Agent {
 	c.locker.Lock()
 	defer c.locker.Unlock()
-	agentID, err := shortid.Generate()
-	if err != nil {
-		log.Fatal(err)
+
+	var agentID string
+	for i := 0; i < 0xFFFF0000; i++ {
+		c.agentLastId += 1
+
+		if c.agentLastId > 0xFFFF0000 {
+			c.agentLastId = 1
+		}
+
+		buf := new(bytes.Buffer)
+		err := binary.Write(buf, binary.BigEndian, c.agentLastId)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		agentID = string(buf.Bytes())
+
+		_, ok := c.agents[agentID]
+		if !ok {
+			break
+		}
+
 	}
-	agentID = agentID[:4]
+
 	agent := NewAgent(c.conn, []byte(agentID))
 	c.agents[agentID] = agent
+
 	return agent
 }
 
