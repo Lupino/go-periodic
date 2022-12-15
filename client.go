@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
-	"github.com/ventu-io/go-shortid"
+	"github.com/teris-io/shortid"
 	"io"
 	"io/ioutil"
 	"log"
