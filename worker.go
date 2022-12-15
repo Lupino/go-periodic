@@ -41,11 +41,6 @@ func NewWorker(size int) *Worker {
 	w.agentQueue = deque.New[*Agent](size)
 	w.wp = workerpool.New(size)
 
-	for i := 1; i < size; i++ {
-		var agent = w.newAgent()
-		w.agentQueue.PushBack(agent)
-	}
-
 	return w
 }
 
@@ -79,6 +74,10 @@ func (w *Worker) RemoveFunc(funcName string) error {
 
 // Work do the task.
 func (w *Worker) Work() {
+	for i := 1; i < size; i++ {
+		var agent = w.newAgent()
+		w.agentQueue.PushBack(agent)
+	}
 	for {
 		agent := w.agentQueue.PopFront()
 		w.agentQueue.PushBack(agent)
