@@ -103,6 +103,11 @@ header is:
 	                    23  CONFIG_SET    Client
 	                    24  CONFIG        Client
 	                    25  RUN_JOB       Client
+	                    26  ACQUIRED      Worker
+	                    27  ACQUIRE       Worker
+	                    28  RELEASE       Worker
+	                    29  NO_WORKER     Client
+	                    30  DATA          Client
 
 ## Client/Worker Requests
 These request types may be sent by either a client or a worker:
@@ -132,14 +137,14 @@ These request types may only be sent by a client:
 	     - Job binary packet
 	RUN_JOB
 	     A client issues one of these when a job needs to be run. The
-	     server will respond with a binary packet.
+	     server will respond with a DATA packet or NO_WORKER packet.
 	     Arguments:
 	     - Job binary packet
 	 STATUS
 	     This sends back a list of all registered functions.  Next to
 	     each function is the number of jobs in the queue, the number of
 	     running jobs, and the number of capable workers. The format is:
-	     FUNCTIONS  WORKERS  JOBS  PROCESSING  SCHEDAT
+	     FUNCTIONS  WORKERS  JOBS  PROCESSING  LOCKED  SCHEDAT
 	     Arguments:
 	     - None.
 	 DROP_FUNC
@@ -168,21 +173,21 @@ These request types may only be sent by a client:
 	     Arguments:
 	     - 1 byte key size.
 	     - ? byte key. the key is one of
-	         - poll-delay
-	         - revert-delay
+	         - poll-interval
+	         - revert-interval
 	         - timeout
 	         - keepalive
-	         - max-patch
+	         - max-batch-size
 	 CONFIG_GET
 	     Get config from server. The server will respond with a CONFIG packet.
 	     Arguments:
 	     - 1 byte key size.
 	     - ? byte key. the key is one of
-	         - poll-delay
-	         - revert-delay
+	         - poll-interval
+	         - revert-interval
 	         - timeout
 	         - keepalive
-	         - max-patch
+	         - max-batch-size
 	     - 4 byte value (int32).
 	 SHUTDOWN
 	     Shutdown server.
@@ -202,6 +207,15 @@ These response types may only be sent to a client:
 	    This is sent in response to one of the CONFIG_GET packets.
 	    Arguments:
 	    - 4 byte value (int32).
+	DATA
+	    This is sent in response to one of the STATUS/RUN_JOB/DUMP packets.
+	    Arguments:
+	    - 4 byte value (int32).
+	    - ? byte binary
+	NO_WORKER
+	    This is sent in response to one of the RUN_JOB packets.
+	    Arguments:
+	    - None
 
 ## Worker Requests
 These request types may only be sent by a worker:
@@ -210,6 +224,7 @@ These request types may only be sent by a worker:
 	    This is sent to notify the server that the worker is able to
 	    perform the given function. The worker is then put on a list to be
 	    woken up whenever the job server receives a job for that function.
+	    The server will respond with a SUCCESS packet.
 	    Arguments:
 	    - 1 byte func size
 	    - ? byte func name
@@ -217,12 +232,14 @@ These request types may only be sent by a worker:
 	    This is sent to notify the server that the worker is able to
 	    perform the given function. The worker is then put on a list to be
 	    woken up whenever the job server receives a job for that function.
+	    The server will respond with a SUCCESS packet.
 	    Arguments:
 	    - 1 byte func size
 	    - ? byte func name
 	CANT_DO
 	    This is sent to notify the server that the worker is no longer
 	    able to perform the given function.
+	    The server will respond with a SUCCESS packet.
 	    Arguments:
 	    - 1 byte func size
 	    - ? byte func name
@@ -240,21 +257,25 @@ These request types may only be sent by a worker:
 	    - None.
 	WORK_DONE
 	    This is to notify the server that the job completed successfully.
+	    The server will respond with a SUCCESS packet.
 	    Arguments:
 	    - ? byte handle
 	    - ? byte data
 	WORK_FAIL
 	    This is to notify the server that the job failed.
+	    The server will respond with a SUCCESS packet.
 	    Arguments:
 	    - ? byte handle
 	SCHED_LATER
 	    This is to notify the server to do the job on next time.
+	    The server will respond with a SUCCESS packet.
 	    Arguments:
 	    - ? byte handle
 	    - 8 byte time delay
 	    - 2 byte step counter
 	ACQUIRE
 	    This is to acquire a lock from the server.
+	    The server will respond with a ACQUIRED packet.
 	    Arguments:
 	    - 1 byte lock name size
 	    - ? byte lock name
@@ -262,6 +283,7 @@ These request types may only be sent by a worker:
 	    - ? byte handle
 	RELEASE
 	    This is to release a lock to the server.
+	    The server will respond with a SUCCESS packet.
 	    Arguments:
 	    - 1 byte lock name size
 	    - ? byte lock name

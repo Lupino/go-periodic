@@ -3,6 +3,7 @@ package periodic
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
 )
@@ -44,18 +45,25 @@ func NewJob(bc *Worker, data []byte) (job Job, err error) {
 
 // Done tell periodic server the job done.
 func (j *Job) Done(data ...[]byte) error {
-	var dat = []byte("")
+	buf := bytes.NewBuffer(nil)
+	buf.Write(j.Handle)
 	if len(data) == 1 {
-		dat = data[0]
+		buf.Write(data[0])
 	}
-	j.Worker.sendCommand(protocol.WORKDONE, bytes.Join([][]byte{j.Handle, dat}, []byte("")))
-	return nil
+	ret, vv, _ := j.Worker.sendCommandAndReceive(protocol.WORKDONE, buf.Bytes())
+	if ret == protocol.SUCCESS {
+		return nil
+	}
+	return fmt.Errorf("Done error: %s", vv)
 }
 
 // Fail tell periodic server the job fail.
 func (j *Job) Fail() error {
-	j.Worker.sendCommand(protocol.WORKFAIL, j.Handle)
-	return nil
+	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.WORKFAIL, j.Handle)
+	if ret == protocol.SUCCESS {
+		return nil
+	}
+	return fmt.Errorf("Fail error: %s", data)
 }
 
 // SchedLater tell periodic server to sched job later on delay.
@@ -76,8 +84,11 @@ func (j *Job) SchedLater(opts ...int) error {
 		binary.BigEndian.PutUint16(h16, uint16(0))
 	}
 	buf.Write(h16)
-	j.Worker.sendCommand(protocol.SCHEDLATER, buf.Bytes())
-	return nil
+	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.SCHEDLATER, buf.Bytes())
+	if ret == protocol.SUCCESS {
+		return nil
+	}
+	return fmt.Errorf("SchedLater error: %s", data)
 }
 
 // Acquire acquire the lock from periodic server
@@ -106,8 +117,11 @@ func (j *Job) Release(name string) error {
 	buf.WriteString(name)
 	buf.Write(j.Handle)
 
-	j.Worker.sendCommand(protocol.RELEASE, buf.Bytes())
-	return nil
+	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.RELEASE, buf.Bytes())
+	if ret == protocol.SUCCESS {
+		return nil
+	}
+	return fmt.Errorf("Release error: %s", data)
 }
 
 // WithLock with lock

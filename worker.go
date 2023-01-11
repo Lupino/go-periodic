@@ -2,6 +2,7 @@ package periodic
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/gammazero/deque"
 	"github.com/gammazero/workerpool"
@@ -53,23 +54,32 @@ func encode8(dat string) []byte {
 
 // AddFunc to periodic server.
 func (w *Worker) AddFunc(funcName string, task func(Job)) error {
-	w.sendCommand(protocol.CANDO, encode8(funcName))
-	w.tasks[funcName] = task
-	return nil
+	ret, data, _ := w.sendCommandAndReceive(protocol.CANDO, encode8(funcName))
+	if ret == protocol.SUCCESS {
+		w.tasks[funcName] = task
+		return nil
+	}
+	return fmt.Errorf("AddFunc error: %s", data)
 }
 
 // Broadcast to all worker.
 func (w *Worker) Broadcast(funcName string, task func(Job)) error {
-	w.sendCommand(protocol.BROADCAST, encode8(funcName))
-	w.tasks[funcName] = task
-	return nil
+	ret, data, _ := w.sendCommandAndReceive(protocol.BROADCAST, encode8(funcName))
+	if ret == protocol.SUCCESS {
+		w.tasks[funcName] = task
+		return nil
+	}
+	return fmt.Errorf("Broadcast error: %s", data)
 }
 
 // RemoveFunc to periodic server.
 func (w *Worker) RemoveFunc(funcName string) error {
-	w.sendCommand(protocol.CANTDO, encode8(funcName))
-	delete(w.tasks, funcName)
-	return nil
+	ret, data, _ := w.sendCommandAndReceive(protocol.CANTDO, encode8(funcName))
+	if ret == protocol.SUCCESS {
+		delete(w.tasks, funcName)
+		return nil
+	}
+	return fmt.Errorf("RemoveFunc error: %s", data)
 }
 
 // Work do the task.
