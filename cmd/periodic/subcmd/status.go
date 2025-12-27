@@ -3,6 +3,7 @@ package subcmd
 import (
 	"fmt"
 	"github.com/Lupino/go-periodic"
+	"github.com/Lupino/go-periodic/protocol"
 	"github.com/gosuri/uitable"
 	"log"
 	"strconv"
@@ -10,9 +11,9 @@ import (
 )
 
 // ShowStatus cli status
-func ShowStatus(entryPoint, xor string) {
+func ShowStatus(entryPoint string, param protocol.RSAConnParam) {
 	c := periodic.NewClient()
-	if err := c.Connect(entryPoint, xor); err != nil {
+	if err := c.Connect(entryPoint, param); err != nil {
 		log.Fatal(err)
 	}
 	stats, _ := c.Status()

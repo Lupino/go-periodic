@@ -2,13 +2,14 @@ package subcmd
 
 import (
 	"github.com/Lupino/go-periodic"
+	"github.com/Lupino/go-periodic/protocol"
 	"log"
 )
 
 // DropFunc cli drop
-func DropFunc(entryPoint, xor, funcName string) {
+func DropFunc(entryPoint string, param protocol.RSAConnParam, funcName string) {
 	c := periodic.NewClient()
-	if err := c.Connect(entryPoint, xor); err != nil {
+	if err := c.Connect(entryPoint, param); err != nil {
 		log.Fatal(err)
 	}
 	if err := c.DropFunc(funcName); err != nil {

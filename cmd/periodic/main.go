@@ -3,12 +3,21 @@ package main
 import (
 	"github.com/Lupino/go-periodic"
 	"github.com/Lupino/go-periodic/cmd/periodic/subcmd"
+	"github.com/Lupino/go-periodic/protocol"
 	"github.com/urfave/cli"
 	"log"
 	"os"
 	"runtime"
 	"time"
 )
+
+func getRSAParam(c *cli.Context) protocol.RSAConnParam {
+	return protocol.RSAConnParam{
+		PrivateKeyPath:      c.GlobalString("rsa-private-key-path"),
+		ServerPublicKeyPath: c.GlobalString("rsa-public-key-path"),
+		Mode:                c.GlobalInt("rsa-mode"),
+	}
+}
 
 func main() {
 	app := cli.NewApp()
@@ -23,10 +32,22 @@ func main() {
 			EnvVar: "PERIODIC_PORT",
 		},
 		cli.StringFlag{
-			Name:   "x",
+			Name:   "rsa-public-key-path",
 			Value:  "",
-			Usage:  "XOR Transport encode file",
-			EnvVar: "XOR_FILE",
+			Usage:  "RSA Transport server public key file path",
+			EnvVar: "RSA_PUBLIC_KEY_PATH",
+		},
+		cli.StringFlag{
+			Name:   "rsa-private-key-path",
+			Value:  "",
+			Usage:  "RSA Transport private key file path",
+			EnvVar: "RSA_PRIVATE_KEY_PATH",
+		},
+		cli.IntFlag{
+			Name:   "rsa-mode",
+			Value:  0,
+			Usage:  "RSA Transport mode",
+			EnvVar: "RSA_MODE",
 		},
 	}
 	app.Commands = []cli.Command{
@@ -34,7 +55,7 @@ func main() {
 			Name:  "status",
 			Usage: "Show status",
 			Action: func(c *cli.Context) error {
-				subcmd.ShowStatus(c.GlobalString("H"), c.GlobalString("x"))
+				subcmd.ShowStatus(c.GlobalString("H"), getRSAParam(c))
 				return nil
 			},
 		},
@@ -77,7 +98,7 @@ func main() {
 				var now = time.Now()
 				var schedAt = int64(now.Unix()) + int64(delay)
 				opts["schedat"] = schedAt
-				subcmd.SubmitJob(c.GlobalString("H"), c.GlobalString("x"), funcName, name, opts)
+				subcmd.SubmitJob(c.GlobalString("H"), getRSAParam(c), funcName, name, opts)
 				return nil
 			},
 		},
@@ -103,7 +124,7 @@ func main() {
 					cli.ShowCommandHelp(c, "remove")
 					log.Fatal("Job name and func is require")
 				}
-				subcmd.RemoveJob(c.GlobalString("H"), c.GlobalString("x"), funcName, name)
+				subcmd.RemoveJob(c.GlobalString("H"), getRSAParam(c), funcName, name)
 				return nil
 			},
 		},
@@ -123,7 +144,7 @@ func main() {
 					cli.ShowCommandHelp(c, "drop")
 					log.Fatal("function name is required")
 				}
-				subcmd.DropFunc(c.GlobalString("H"), c.GlobalString("x"), Func)
+				subcmd.DropFunc(c.GlobalString("H"), getRSAParam(c), Func)
 				return nil
 			},
 		},
@@ -159,7 +180,7 @@ func main() {
 					cli.ShowCommandHelp(c, "run")
 					log.Fatal("command is required")
 				}
-				subcmd.Run(c.GlobalString("H"), c.GlobalString("x"), Func, exec, n)
+				subcmd.Run(c.GlobalString("H"), getRSAParam(c), Func, exec, n)
 				return nil
 			},
 		},

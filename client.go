@@ -7,7 +7,6 @@ import (
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"sort"
@@ -139,18 +138,18 @@ func (c *Client) checkHealth() {
 }
 
 // Connect a periodic server.
-func (c *Client) Connect(addr string, key ...string) error {
+func (c *Client) Connect(addr string, args ...protocol.RSAConnParam) error {
 	parts := strings.SplitN(addr, "://", 2)
 	conn, err := net.Dial(parts[0], parts[1])
 	if err != nil {
 		return err
 	}
-	if len(key) > 0 && len(key[0]) > 0 {
-		if keyBuf, err := ioutil.ReadFile(key[0]); err != nil {
+	if len(args) > 0 && len(args[0].PrivateKeyPath) > 0 {
+		rsaConn, err := protocol.NewClientRSAConn(conn, args[0])
+		if err != nil {
 			return err
-		} else {
-			c.initClient(protocol.NewXORConn(conn, keyBuf), protocol.TYPECLIENT)
 		}
+		c.initClient(rsaConn, protocol.TYPECLIENT)
 	} else {
 		c.initClient(conn, protocol.TYPECLIENT)
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/Lupino/go-periodic"
+	"github.com/Lupino/go-periodic/protocol"
 	"io"
 	"log"
 	"os"
@@ -13,9 +14,9 @@ import (
 )
 
 // Run cli run
-func Run(entryPoint, xor, funcName, cmd string, n int) {
+func Run(entryPoint string, param protocol.RSAConnParam, funcName, cmd string, n int) {
 	w := periodic.NewWorker(n)
-	if err := w.Connect(entryPoint, xor); err != nil {
+	if err := w.Connect(entryPoint, param); err != nil {
 		log.Fatalf("Error: %s\n", err.Error())
 	}
 	w.AddFunc(funcName, func(job periodic.Job) {

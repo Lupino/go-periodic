@@ -39,7 +39,7 @@ func NewWorker(size int) *Worker {
 		}
 	}
 
-	w.agentQueue = deque.New[*Agent](size)
+	w.agentQueue = new(deque.Deque[*Agent])
 	w.wp = workerpool.New(size)
 
 	return w
