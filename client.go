@@ -12,82 +12,77 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
-// Client defined base client.
+// Client defines the base client.
 type Client struct {
-	agents      map[string]*Agent
+	// Use sync.Map for high-concurrency agent management.
+	agents      sync.Map
 	conn        protocol.Conn
-	locker      *sync.RWMutex
-	alive       bool
+	// Use atomic.Bool for lock-free state checks.
+	alive       atomic.Bool
 	agentLastId uint32
 	processTask func(string, []byte)
 }
 
-// NewClient create a client.
+// NewClient creates a new client.
 func NewClient() *Client {
 	return new(Client)
 }
 
-// initClient init the base client.
+// initClient initializes the base client.
 func (c *Client) initClient(conn net.Conn, clientType protocol.ClientType) {
-	c.agents = make(map[string]*Agent)
-	c.alive = true
+	c.agents = sync.Map{} // Re-initialize the sync.Map
+	c.alive.Store(true)   // Set alive state atomically
 	c.agentLastId = 0
-	c.locker = new(sync.RWMutex)
 	c.conn = protocol.NewClientConn(conn)
 	c.conn.Send(clientType.Bytes())
 	c.conn.Receive()
 }
 
-// Clone clone the base client.
+// Clone clones the base client.
+// Note: It continues to share the same underlying connection and agents.
 func (c *Client) Clone() *Client {
 	var c1 = new(Client)
 	c1.agents = c.agents
 	c1.alive = c.alive
-	c1.locker = c.locker
 	c1.conn = c.conn
 	return c1
 }
 
-// removeAgent remove a agent by a agentID
+// removeAgent removes an agent by an agentID.
 func (c *Client) removeAgent(agentID []byte) {
-	c.locker.Lock()
-	defer c.locker.Unlock()
-	delete(c.agents, string(agentID))
+	c.agents.Delete(string(agentID)) // sync.Map handles internal locking
 }
 
-// newAgent create a new agent with an shortid
+// newAgent creates a new agent with a unique short ID.
+// Optimization: Uses atomic increment and verifies ID availability in sync.Map.
 func (c *Client) newAgent() *Agent {
-	c.locker.Lock()
-	defer c.locker.Unlock()
-
 	var agentID string
+	idBuf := make([]byte, 4)
+
 	for i := 0; i < 0xFFFF0000; i++ {
-		c.agentLastId += 1
+		// Atomically increment the last ID.
+		newID := atomic.AddUint32(&c.agentLastId, 1)
 
-		if c.agentLastId > 0xFFFF0000 {
-			c.agentLastId = 1
+		if newID > 0xFFFF0000 {
+			atomic.StoreUint32(&c.agentLastId, 1)
+			newID = 1
 		}
 
-		buf := new(bytes.Buffer)
-		err := binary.Write(buf, binary.BigEndian, c.agentLastId)
-		if err != nil {
-			log.Fatal(err)
-		}
+		binary.BigEndian.PutUint32(idBuf, newID)
+		agentID = string(idBuf)
 
-		agentID = string(buf.Bytes())
-
-		_, ok := c.agents[agentID]
-		if !ok {
+		// Confirm the ID is not currently in use.
+		if _, ok := c.agents.Load(agentID); !ok {
 			break
 		}
-
 	}
 
 	agent := NewAgent(c.conn, []byte(agentID))
-	c.agents[agentID] = agent
+	c.agents.Store(agentID, agent)
 
 	return agent
 }
@@ -95,7 +90,9 @@ func (c *Client) newAgent() *Agent {
 func (c *Client) sendCommandAndReceive(cmd protocol.Command, data []byte) (protocol.Command, []byte, error) {
 	agent := c.newAgent()
 	defer c.removeAgent(agent.ID)
-	agent.Send(cmd, data)
+	if err := agent.Send(cmd, data); err != nil {
+		return 0, nil, err
+	}
 	return agent.Receive()
 }
 
@@ -105,39 +102,46 @@ func (c *Client) sendCommand(cmd protocol.Command, data []byte) {
 	agent.Send(cmd, data)
 }
 
-// receiveLoop a loop on receive data.
+// receiveLoop listens for incoming data and dispatches to agents.
 func (c *Client) receiveLoop() {
-	for c.alive {
+	for c.alive.Load() { // Atomic check for alive state
 		payload, err := c.conn.Receive()
 		if err != nil {
-			log.Fatal(err)
+			if c.alive.Load() {
+				log.Printf("Receive error: %v\n", err)
+				c.Close()
+			}
+			break
 		}
 		agentID, cmd, data := protocol.ParseCommand(payload)
+		idStr := string(agentID)
+
 		if cmd == protocol.JOBASSIGN {
-			c.processTask(string(agentID), data)
+			if c.processTask != nil {
+				c.processTask(idStr, data)
+			}
 			continue
 		}
-		c.locker.Lock()
-		agent, ok := c.agents[string(agentID)]
-		if !ok {
+
+		// Use Load from sync.Map for thread-safe access.
+		if val, ok := c.agents.Load(idStr); ok {
+			agent := val.(*Agent)
+			agent.FeedCommand(cmd, data)
+		} else {
 			log.Printf("Agent: %s not found.\n", agentID)
-			c.locker.Unlock()
-			continue
 		}
-		agent.FeedCommand(cmd, data)
-		c.locker.Unlock()
 	}
 }
 
-// checkHealth check connection health.
+// checkHealth checks connection health.
 func (c *Client) checkHealth() {
-	for c.alive {
+	for c.alive.Load() {
 		c.Ping()
 		time.Sleep(time.Second)
 	}
 }
 
-// Connect a periodic server.
+// Connect to a periodic server.
 func (c *Client) Connect(addr string, args ...protocol.RSAConnParam) error {
 	parts := strings.SplitN(addr, "://", 2)
 	conn, err := net.Dial(parts[0], parts[1])
@@ -160,61 +164,36 @@ func (c *Client) Connect(addr string, args ...protocol.RSAConnParam) error {
 
 // Ping a periodic server.
 func (c *Client) Ping() bool {
-	ret, _, _ := c.sendCommandAndReceive(protocol.PING, nil)
-	if ret == protocol.PONG {
-		return true
-	}
-	return false
+	ret, _, err := c.sendCommandAndReceive(protocol.PING, nil)
+	return err == nil && ret == protocol.PONG
 }
 
 // SubmitJob to periodic server.
-//
-//	opts = map[string]interface{}{
-//	  "schedat": schedat,
-//	  "args": args,
-//	  "timeout": timeout,
-//	}
 func (c *Client) SubmitJob(funcName, name string, opts map[string]interface{}) error {
-	job := types.Job{
-		Func: funcName,
-		Name: name,
-	}
-	if args, ok := opts["args"]; ok {
-		job.Args, _ = args.(string)
-	}
-	if schedat, ok := opts["schedat"]; ok {
-		job.SchedAt, _ = schedat.(int64)
-	}
-	if timeout, ok := opts["timeout"]; ok {
-		job.Timeout, _ = timeout.(int32)
-	}
-	ret, data, _ := c.sendCommandAndReceive(protocol.SUBMITJOB, job.Bytes())
+	job := types.Job{Func: funcName, Name: name}
+	if args, ok := opts["args"].(string); ok { job.Args = args }
+	if schedat, ok := opts["schedat"].(int64); ok { job.SchedAt = schedat }
+	if timeout, ok := opts["timeout"].(int32); ok { job.Timeout = timeout }
+
+	ret, data, err := c.sendCommandAndReceive(protocol.SUBMITJOB, job.Bytes())
+	if err != nil { return err }
 	if ret == protocol.SUCCESS {
 		return nil
 	}
 	return fmt.Errorf("SubmitJob error: %s", data)
 }
 
-// RunJob to periodic server and get an result.
-//
-//	opts = map[string]interface{}{
-//	  "args": args,
-//	  "timeout": timeout,
-//	}
+// RunJob to periodic server and get a result.
 func (c *Client) RunJob(funcName, name string, opts map[string]interface{}) (err error, ret []byte) {
-	job := types.Job{
-		Func: funcName,
-		Name: name,
-	}
-	if args, ok := opts["args"]; ok {
-		job.Args, _ = args.(string)
-	}
-	if timeout, ok := opts["timeout"]; ok {
-		if job.Timeout, ok = timeout.(int32); !ok {
-			job.Timeout = 10
-		}
+	job := types.Job{Func: funcName, Name: name}
+	if args, ok := opts["args"].(string); ok { job.Args = args }
+	if timeout, ok := opts["timeout"].(int32); ok {
+		job.Timeout = timeout
+	} else {
+		job.Timeout = 10
 	}
 	cmd, ret, err := c.sendCommandAndReceive(protocol.RUNJOB, job.Bytes())
+	if err != nil { return err, nil }
 	if cmd == protocol.NO_WORKER {
 		err = fmt.Errorf("Error: no worker %s", funcName)
 	}
@@ -223,63 +202,60 @@ func (c *Client) RunJob(funcName, name string, opts map[string]interface{}) (err
 
 // RecvData from periodic server.
 func (c *Client) RecvData(funcName, name string, cb func(data []byte) error) error {
-	job := types.Job{
-		Func: funcName,
-		Name: name,
-	}
+	job := types.Job{Func: funcName, Name: name}
 	agent := c.newAgent()
 	defer c.removeAgent(agent.ID)
 	agent.Send(protocol.RECVDATA, job.Bytes())
 	for {
-		ret, data, _ := agent.Receive()
+		ret, data, err := agent.Receive()
+		if err != nil { return err }
 		if ret == protocol.NO_WORKER {
 			return fmt.Errorf("Error: no worker %s", funcName)
 		}
 		if len(data) == 3 && string(data) == "EOF" {
 			return nil
 		}
-		err := cb(data)
-		if err != nil {
+		if err := cb(data); err != nil {
 			return err
 		}
 	}
-	return fmt.Errorf("RecvData error: %s", funcName)
 }
 
-// Status return a status from periodic server.
+// Status returns status from periodic server.
 func (c *Client) Status() ([][]string, error) {
-	_, data, _ := c.sendCommandAndReceive(protocol.STATUS, nil)
+	_, data, err := c.sendCommandAndReceive(protocol.STATUS, nil)
+	if err != nil { return nil, err }
 	stats := strings.Split(string(data), "\n")
 	sort.Strings(stats)
 
-	lines := make([][]string, 0, 5)
+	lines := make([][]string, 0)
 	for _, stat := range stats {
-		if stat == "" {
-			continue
-		}
+		if stat == "" { continue }
 		line := strings.Split(stat, ",")
 		lines = append(lines, line)
 	}
 	return lines, nil
 }
 
-// DropFunc drop unuself function from periodic server.
+// DropFunc drops unused function from periodic server.
 func (c *Client) DropFunc(funcName string) error {
-	ret, data, _ := c.sendCommandAndReceive(protocol.DROPFUNC, encode8(funcName))
+	ret, data, err := c.sendCommandAndReceive(protocol.DROPFUNC, encode8(funcName))
+	if err != nil { return err }
 	if ret == protocol.SUCCESS {
 		return nil
 	}
 	return fmt.Errorf("Drop func %s error: %s", funcName, data)
 }
 
-// RemoveJob to periodic server.
+// RemoveJob from periodic server.
 func (c *Client) RemoveJob(funcName, name string) error {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(byte(len(funcName)))
 	buf.WriteString(funcName)
 	buf.WriteByte(byte(len(name)))
 	buf.WriteString(name)
-	ret, data, _ := c.sendCommandAndReceive(protocol.REMOVEJOB, buf.Bytes())
+	ret, data, err := c.sendCommandAndReceive(protocol.REMOVEJOB, buf.Bytes())
+	if err != nil { return err }
 	if ret == protocol.SUCCESS {
 		return nil
 	}
@@ -288,10 +264,14 @@ func (c *Client) RemoveJob(funcName, name string) error {
 
 // Close the base client.
 func (c *Client) Close() {
-	c.locker.Lock()
-	defer c.locker.Unlock()
-	for _, agent := range c.agents {
-		agent.FeedError(io.EOF)
+	if !c.alive.Swap(false) { // Only close if it was alive
+		return
 	}
-	c.alive = false
+
+	// Range over sync.Map to notify all agents.
+	c.agents.Range(func(key, value interface{}) bool {
+		agent := value.(*Agent)
+		agent.FeedError(io.EOF) // Ensure agents aren't blocked on Receive
+		return true
+	})
 }

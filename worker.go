@@ -1,40 +1,49 @@
 package periodic
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/gammazero/deque"
 	"github.com/gammazero/workerpool"
+	"sync"
 	"time"
 )
 
-// Worker defined a client.
+// Worker defined a periodic worker.
 type Worker struct {
 	Client
-	tasks      map[string]func(Job)
+	// Use sync.Map for thread-safe task storage.
+	tasks      sync.Map
 	agentQueue *deque.Deque[*Agent]
 	wp         *workerpool.WorkerPool
 }
 
-// NewWorker create a client.
+// NewWorker creates a worker with a specified pool size.
 func NewWorker(size int) *Worker {
 	w := new(Worker)
-	w.tasks = make(map[string]func(Job))
+	// tasks is initialized as an empty sync.Map.
+	w.tasks = sync.Map{}
+
 	w.processTask = func(msgId string, data []byte) {
+		// Create a specific agent for this job assignment.
 		agent := NewAgent(w.conn, []byte(msgId))
 		agent.Send(protocol.JOBASSIGNED, nil)
+
 		job, err := NewJob(w, data)
 		if err != nil {
 			return
 		}
-		task, ok := w.tasks[job.FuncName]
-		if ok {
+
+		// Use sync.Map Load for concurrent-safe task retrieval.
+		if taskVal, ok := w.tasks.Load(job.FuncName); ok {
+			task := taskVal.(func(Job))
 			w.wp.Submit(func() {
+				// Signal server to grab another job after this one is assigned.
 				defer agent.Send(protocol.GRABJOB, nil)
 				task(job)
 			})
 		} else {
+			// If the function is not found locally, tell the server we can't do it.
 			w.RemoveFunc(job.FuncName)
 			job.Fail()
 			agent.Send(protocol.GRABJOB, nil)
@@ -47,58 +56,86 @@ func NewWorker(size int) *Worker {
 	return w
 }
 
+// encode8 encodes a string into a length-prefixed byte slice.
+// Optimization: Uses pre-allocated slice instead of bytes.Buffer.
 func encode8(dat string) []byte {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteByte(byte(len(dat)))
-	buf.WriteString(dat)
-	return buf.Bytes()
+	length := len(dat)
+	if length > 255 {
+		length = 255
+	}
+	buf := make([]byte, length+1)
+	buf[0] = byte(length)
+	copy(buf[1:], dat[:length])
+	return buf
 }
 
-// AddFunc to periodic server.
+// AddFunc registers a function to the periodic server.
 func (w *Worker) AddFunc(funcName string, task func(Job)) error {
-	ret, data, _ := w.sendCommandAndReceive(protocol.CANDO, encode8(funcName))
+	ret, data, err := w.sendCommandAndReceive(protocol.CANDO, encode8(funcName))
+	if err != nil {
+		return err
+	}
 	if ret == protocol.SUCCESS {
-		w.tasks[funcName] = task
+		w.tasks.Store(funcName, task) // Atomic store.
 		return nil
 	}
 	return fmt.Errorf("AddFunc error: %s", data)
 }
 
-// Broadcast to all worker.
+// Broadcast registers a broadcast function to the periodic server.
 func (w *Worker) Broadcast(funcName string, task func(Job)) error {
-	ret, data, _ := w.sendCommandAndReceive(protocol.BROADCAST, encode8(funcName))
+	ret, data, err := w.sendCommandAndReceive(protocol.BROADCAST, encode8(funcName))
+	if err != nil {
+		return err
+	}
 	if ret == protocol.SUCCESS {
-		w.tasks[funcName] = task
+		w.tasks.Store(funcName, task) // Atomic store.
 		return nil
 	}
 	return fmt.Errorf("Broadcast error: %s", data)
 }
 
-// RemoveFunc to periodic server.
+// RemoveFunc unregisters a function from the periodic server.
 func (w *Worker) RemoveFunc(funcName string) error {
-	ret, data, _ := w.sendCommandAndReceive(protocol.CANTDO, encode8(funcName))
+	ret, data, err := w.sendCommandAndReceive(protocol.CANTDO, encode8(funcName))
+	if err != nil {
+		return err
+	}
 	if ret == protocol.SUCCESS {
-		delete(w.tasks, funcName)
+		w.tasks.Delete(funcName) // Atomic delete.
 		return nil
 	}
 	return fmt.Errorf("RemoveFunc error: %s", data)
 }
 
-// Work do the task.
+// Work enters the loop to request and process tasks.
 func (w *Worker) Work() {
+	// Initialize agents based on the worker pool size.
 	for i := 0; i < w.wp.Size(); i++ {
 		var agent = w.newAgent()
 		w.agentQueue.PushBack(agent)
 	}
+
+	// Use a Ticker instead of time.After to save resources.
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
 	for {
-		agent := w.agentQueue.PopFront()
-		w.agentQueue.PushBack(agent)
-		if w.wp.WaitingQueueSize() < 1 {
-			agent.Send(protocol.GRABJOB, nil)
-		}
-		select {
-		case <-time.After(1 * time.Second):
+		// Use atomic load from Client to check if still connected.
+		if !w.alive.Load() {
 			break
+		}
+
+		// Rotate through agents to grab jobs if the pool is not full.
+		if w.wp.WaitingQueueSize() < 1 {
+			agent := w.agentQueue.PopFront()
+			agent.Send(protocol.GRABJOB, nil)
+			w.agentQueue.PushBack(agent)
+		}
+
+		select {
+		case <-ticker.C:
+			// Continue the loop on every tick.
 		}
 	}
 }

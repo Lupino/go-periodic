@@ -1,14 +1,13 @@
 package periodic
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"github.com/Lupino/go-periodic/protocol"
 	"github.com/Lupino/go-periodic/types"
 )
 
-// Job defined a job type.
+// Job defines a job type and its associated worker and raw data.
 type Job struct {
 	Worker   *Worker
 	Raw      types.Job
@@ -18,7 +17,7 @@ type Job struct {
 	Handle   []byte
 }
 
-// NewJob create a job
+// NewJob creates a job from raw byte data assigned by the server.
 func NewJob(bc *Worker, data []byte) (job Job, err error) {
 	var raw types.Job
 	raw, err = types.NewJob(data)
@@ -26,11 +25,12 @@ func NewJob(bc *Worker, data []byte) (job Job, err error) {
 		return
 	}
 
-	buf := bytes.NewBuffer(nil)
-	buf.WriteByte(byte(len(raw.Func)))
-	buf.WriteString(raw.Func)
-	buf.WriteByte(byte(len(raw.Name)))
-	buf.WriteString(raw.Name)
+	// Optimization: Pre-allocate handle buffer instead of using bytes.Buffer.
+	handle := make([]byte, 1+len(raw.Func)+1+len(raw.Name))
+	handle[0] = byte(len(raw.Func))
+	copy(handle[1:], raw.Func)
+	handle[1+len(raw.Func)] = byte(len(raw.Name))
+	copy(handle[2+len(raw.Func):], raw.Name)
 
 	job = Job{
 		Worker:   bc,
@@ -38,111 +38,145 @@ func NewJob(bc *Worker, data []byte) (job Job, err error) {
 		FuncName: raw.Func,
 		Name:     raw.Name,
 		Args:     raw.Args,
-		Handle:   buf.Bytes(),
+		Handle:   handle,
 	}
 	return
 }
 
-// Done tell periodic server the job done.
+// Done notifies the periodic server that the job is complete.
 func (j *Job) Done(data ...[]byte) error {
-	buf := bytes.NewBuffer(nil)
-	buf.Write(j.Handle)
+	totalSize := len(j.Handle)
 	if len(data) == 1 {
-		buf.Write(data[0])
+		totalSize += len(data[0])
 	}
-	ret, vv, _ := j.Worker.sendCommandAndReceive(protocol.WORKDONE, buf.Bytes())
+
+	buf := make([]byte, totalSize)
+	copy(buf, j.Handle)
+	if len(data) == 1 {
+		copy(buf[len(j.Handle):], data[0])
+	}
+
+	// Fix: Capture and check the error from the underlying connection.
+	ret, vv, err := j.Worker.sendCommandAndReceive(protocol.WORKDONE, buf)
+	if err != nil {
+		return err
+	}
 	if ret == protocol.SUCCESS {
 		return nil
 	}
 	return fmt.Errorf("Done error: %s", vv)
 }
 
-// Data tell periodic server the job data.
+// Data sends intermediate job data to the periodic server.
 func (j *Job) Data(data ...[]byte) error {
-	buf := bytes.NewBuffer(nil)
-	buf.Write(j.Handle)
+	totalSize := len(j.Handle)
 	if len(data) == 1 {
-		buf.Write(data[0])
+		totalSize += len(data[0])
 	}
-	ret, vv, _ := j.Worker.sendCommandAndReceive(protocol.WORKDATA, buf.Bytes())
+
+	buf := make([]byte, totalSize)
+	copy(buf, j.Handle)
+	if len(data) == 1 {
+		copy(buf[len(j.Handle):], data[0])
+	}
+
+	ret, vv, err := j.Worker.sendCommandAndReceive(protocol.WORKDATA, buf)
+	if err != nil {
+		return err
+	}
 	if ret == protocol.SUCCESS {
 		return nil
 	}
 	return fmt.Errorf("Data error: %s", vv)
 }
 
-// Fail tell periodic server the job fail.
+// Fail notifies the periodic server that the job has failed.
 func (j *Job) Fail() error {
-	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.WORKFAIL, j.Handle)
+	ret, data, err := j.Worker.sendCommandAndReceive(protocol.WORKFAIL, j.Handle)
+	if err != nil {
+		return err
+	}
 	if ret == protocol.SUCCESS {
 		return nil
 	}
 	return fmt.Errorf("Fail error: %s", data)
 }
 
-// SchedLater tell periodic server to sched job later on delay.
+// SchedLater tells the periodic server to reschedule the job for later.
 // SchedLater(delay int)
 // SchedLater(delay, counter int) sched with a incr the counter
 func (j *Job) SchedLater(opts ...int) error {
-	delay := opts[0]
-	buf := bytes.NewBuffer(nil)
-	buf.Write(j.Handle)
-	h64 := make([]byte, 8)
-	binary.BigEndian.PutUint64(h64, uint64(delay))
-	buf.Write(h64)
-
-	h16 := make([]byte, 2)
-	if len(opts) == 2 {
-		binary.BigEndian.PutUint16(h16, uint16(opts[1]))
-	} else {
-		binary.BigEndian.PutUint16(h16, uint16(0))
+	if len(opts) < 1 {
+		return fmt.Errorf("SchedLater requires at least a delay parameter")
 	}
-	buf.Write(h16)
-	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.SCHEDLATER, buf.Bytes())
+
+	delay := opts[0]
+	handleLen := len(j.Handle)
+	buf := make([]byte, handleLen+8+2) // Handle + 8 bytes (delay) + 2 bytes (counter)
+
+	copy(buf, j.Handle)
+	binary.BigEndian.PutUint64(buf[handleLen:], uint64(delay))
+
+	if len(opts) == 2 {
+		binary.BigEndian.PutUint16(buf[handleLen+8:], uint16(opts[1]))
+	} else {
+		binary.BigEndian.PutUint16(buf[handleLen+8:], 0)
+	}
+
+	ret, data, err := j.Worker.sendCommandAndReceive(protocol.SCHEDLATER, buf)
+	if err != nil {
+		return err
+	}
 	if ret == protocol.SUCCESS {
 		return nil
 	}
 	return fmt.Errorf("SchedLater error: %s", data)
 }
 
-// Acquire acquire the lock from periodic server
+// Acquire requests a lock from the periodic server.
 func (j *Job) Acquire(name string, count int) (error, bool) {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteByte(byte(len(name)))
-	buf.WriteString(name)
+	nameLen := len(name)
+	buf := make([]byte, 1+nameLen+2+len(j.Handle))
+	buf[0] = byte(nameLen)
+	copy(buf[1:], name)
+	binary.BigEndian.PutUint16(buf[1+nameLen:], uint16(count))
+	copy(buf[1+nameLen+2:], j.Handle)
 
-	h16 := make([]byte, 2)
-	binary.BigEndian.PutUint16(h16, uint16(count))
-	buf.Write(h16)
-	buf.Write(j.Handle)
+	ret, data, err := j.Worker.sendCommandAndReceive(protocol.ACQUIRE, buf)
+	if err != nil {
+		return err, false
+	}
 
-	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.ACQUIRE, buf.Bytes())
-
-	if ret == protocol.ACQUIRED && data[0] == 1 {
+	// Safety: Check data length before accessing index.
+	if ret == protocol.ACQUIRED && len(data) > 0 && data[0] == 1 {
 		return nil, true
 	}
 	return nil, false
 }
 
-// Release release lock
+// Release releases a previously acquired lock.
 func (j *Job) Release(name string) error {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteByte(byte(len(name)))
-	buf.WriteString(name)
-	buf.Write(j.Handle)
+	nameLen := len(name)
+	buf := make([]byte, 1+nameLen+len(j.Handle))
+	buf[0] = byte(nameLen)
+	copy(buf[1:], name)
+	copy(buf[1+nameLen:], j.Handle)
 
-	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.RELEASE, buf.Bytes())
+	ret, data, err := j.Worker.sendCommandAndReceive(protocol.RELEASE, buf)
+	if err != nil {
+		return err
+	}
 	if ret == protocol.SUCCESS {
 		return nil
 	}
 	return fmt.Errorf("Release error: %s", data)
 }
 
-// WithLock with lock
+// WithLock executes a task while holding a named lock.
 func (j *Job) WithLock(name string, count int, task func()) {
-	_, acquired := j.Acquire(name, count)
-	if acquired {
+	err, acquired := j.Acquire(name, count)
+	if err == nil && acquired {
+		defer j.Release(name)
 		task()
-		j.Release(name)
 	}
 }

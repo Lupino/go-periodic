@@ -1,67 +1,92 @@
 package periodic
 
 import (
-	"bytes"
 	"github.com/Lupino/go-periodic/protocol"
-	"sync"
+	"sync/atomic"
 )
 
-type data struct {
+// agentPacket wraps the response from the server.
+type agentPacket struct {
 	data []byte
 	cmd  protocol.Command
 	err  error
 }
 
-// Agent for client.
+// Agent represents a multiplexed session over a connection.
 type Agent struct {
-	conn    protocol.Conn
-	ID      []byte
-	locker  *sync.RWMutex
-	waiter  *sync.RWMutex
-	waiting bool
-	recived bool
-	reader  chan data
+	conn   protocol.Conn
+	ID     []byte
+	reader chan agentPacket
+
+	// Use atomic.Bool for thread-safe state management without mutexes.
+	isWaiting atomic.Bool
+	isClosed  atomic.Bool
 }
 
-// NewAgent create an agent.
+// NewAgent creates a new agent instance.
 func NewAgent(conn protocol.Conn, ID []byte) *Agent {
-	agent := new(Agent)
-	agent.conn = conn
-	agent.ID = ID
-	agent.locker = new(sync.RWMutex)
-	agent.waiter = new(sync.RWMutex)
-	agent.waiting = false
-	agent.reader = make(chan data, 10)
-	agent.recived = false
+	agent := &Agent{
+		conn:   conn,
+		ID:     ID,
+		reader: make(chan agentPacket, 10), // Buffered to prevent blocking receiveLoop
+	}
 	return agent
 }
 
-// Send command and data to server.
+// Send command and data to the server using a single memory allocation.
 func (a *Agent) Send(cmd protocol.Command, data []byte) error {
-	buf := bytes.NewBuffer(nil)
-	buf.Write(a.ID)
-	buf.WriteByte(byte(cmd))
-	if data != nil {
-		buf.Write(data)
+	idLen := len(a.ID)
+	// Pre-allocate the exact size needed: ID + Command(1 byte) + Data
+	packet := make([]byte, idLen+1+len(data))
+
+	copy(packet[0:idLen], a.ID)
+	packet[idLen] = byte(cmd)
+	if len(data) > 0 {
+		copy(packet[idLen+1:], data)
 	}
-	return a.conn.Send(buf.Bytes())
+
+	// Set waiting state atomically before sending
+	a.isWaiting.Store(true)
+	return a.conn.Send(packet)
 }
 
-// Receive command or data from server.
+// Receive blocks until a command or data is received for this agent.
 func (a *Agent) Receive() (cmd protocol.Command, data []byte, err error) {
-	dat := <-a.reader
-	cmd = dat.cmd
-	data = dat.data
-	err = dat.err
-	return
+	// Wait for data from the channel
+	packet, ok := <-a.reader
+	if !ok {
+		return protocol.UNKNOWN, nil, nil
+	}
+
+	// Reset waiting state atomically
+	a.isWaiting.Store(false)
+	return packet.cmd, packet.data, packet.err
 }
 
-// FeedCommand feed command from a connection or other.
+// FeedCommand pushes a server response into the agent's channel.
 func (a *Agent) FeedCommand(cmd protocol.Command, dat []byte) {
-	a.reader <- data{cmd: cmd, data: dat, err: nil}
+	// Safety check: don't feed to a closed agent
+	if a.isClosed.Load() {
+		return
+	}
+
+	a.reader <- agentPacket{
+		cmd:  cmd,
+		data: dat,
+		err:  nil,
+	}
 }
 
-// FeedError feed error when the agent cause a error.
+// FeedError propagates errors (like connection loss) to the agent.
+// Fix: Correctly passes the 'err' argument to the reader.
 func (a *Agent) FeedError(err error) {
-	a.reader <- data{cmd: protocol.UNKNOWN, data: nil, err: nil}
+	if a.isClosed.Swap(true) {
+		return // Already handled
+	}
+
+	a.reader <- agentPacket{
+		cmd:  protocol.UNKNOWN,
+		data: nil,
+		err:  err,
+	}
 }
