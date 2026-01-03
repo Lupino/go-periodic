@@ -57,6 +57,20 @@ func (j *Job) Done(data ...[]byte) error {
 	return fmt.Errorf("Done error: %s", vv)
 }
 
+// Data tell periodic server the job data.
+func (j *Job) Data(data ...[]byte) error {
+	buf := bytes.NewBuffer(nil)
+	buf.Write(j.Handle)
+	if len(data) == 1 {
+		buf.Write(data[0])
+	}
+	ret, vv, _ := j.Worker.sendCommandAndReceive(protocol.WORKDATA, buf.Bytes())
+	if ret == protocol.SUCCESS {
+		return nil
+	}
+	return fmt.Errorf("Data error: %s", vv)
+}
+
 // Fail tell periodic server the job fail.
 func (j *Job) Fail() error {
 	ret, data, _ := j.Worker.sendCommandAndReceive(protocol.WORKFAIL, j.Handle)

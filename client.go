@@ -221,6 +221,31 @@ func (c *Client) RunJob(funcName, name string, opts map[string]interface{}) (err
 	return err, ret
 }
 
+// RecvData from periodic server.
+func (c *Client) RecvData(funcName, name string, cb func(data []byte) error) error {
+	job := types.Job{
+		Func: funcName,
+		Name: name,
+	}
+	agent := c.newAgent()
+	defer c.removeAgent(agent.ID)
+	agent.Send(protocol.RECVDATA, job.Bytes())
+	for {
+		ret, data, _ := agent.Receive()
+		if ret == protocol.NO_WORKER {
+			return fmt.Errorf("Error: no worker %s", funcName)
+		}
+		if len(data) == 3 && string(data) == "EOF" {
+			return nil
+		}
+		err := cb(data)
+		if err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("RecvData error: %s", funcName)
+}
+
 // Status return a status from periodic server.
 func (c *Client) Status() ([][]string, error) {
 	_, data, _ := c.sendCommandAndReceive(protocol.STATUS, nil)

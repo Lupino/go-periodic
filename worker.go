@@ -23,7 +23,7 @@ func NewWorker(size int) *Worker {
 	w.tasks = make(map[string]func(Job))
 	w.processTask = func(msgId string, data []byte) {
 		agent := NewAgent(w.conn, []byte(msgId))
-		agent.Send(protocol.GRABJOB, nil)
+		agent.Send(protocol.JOBASSIGNED, nil)
 		job, err := NewJob(w, data)
 		if err != nil {
 			return
@@ -31,11 +31,13 @@ func NewWorker(size int) *Worker {
 		task, ok := w.tasks[job.FuncName]
 		if ok {
 			w.wp.Submit(func() {
+				defer agent.Send(protocol.GRABJOB, nil)
 				task(job)
 			})
 		} else {
 			w.RemoveFunc(job.FuncName)
 			job.Fail()
+			agent.Send(protocol.GRABJOB, nil)
 		}
 	}
 

@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bytes"
 	"strconv"
 )
 
@@ -10,80 +9,81 @@ type Command int
 
 const (
 	// NOOP do nothing
-	NOOP Command = 0 // server
+	NOOP Command = iota // server (0)
 	// GRABJOB client ask a job
-	GRABJOB Command = 1 // worker
+	GRABJOB // worker (1)
 	// SCHEDLATER tell server sched later the job
-	SCHEDLATER Command = 2 // worker
+	SCHEDLATER // worker (2)
 	// WORKDONE tell server the work is done
-	WORKDONE Command = 3 // worker
+	WORKDONE // worker (3)
 	// WORKFAIL tell server work is fail
-	WORKFAIL Command = 4 // worker
+	WORKFAIL // worker (4)
 	// JOBASSIGN assign a job for client
-	JOBASSIGN Command = 5 // server
+	JOBASSIGN // server (5)
 	// NOJOB tell client job is empty
-	NOJOB Command = 6 // server
+	NOJOB // server (6)
 	// CANDO tell server the worker can do some func
-	CANDO Command = 7 // worker
+	CANDO // worker (7)
 	// CANTDO tell server the worker can not do some func
-	CANTDO Command = 8 // worker
+	CANTDO // worker (8)
 	// PING test ping
-	PING Command = 9 // client or worker
+	PING // client or worker (9)
 	// PONG reply pong
-	PONG Command = 10 // server
+	PONG // server (10)
 	// SLEEP tell the worker to sleep
-	SLEEP Command = 11 // worker
+	SLEEP // worker (11)
 	// UNKNOWN command unknow
-	UNKNOWN Command = 12 // server
+	UNKNOWN // server (12)
 	// SUBMITJOB submit a job for server
-	SUBMITJOB Command = 13 // client
+	SUBMITJOB // client (13)
 	// STATUS ask the server status
-	STATUS Command = 14 // client
+	STATUS // client (14)
 	// DROPFUNC drop an empty worker func
-	DROPFUNC Command = 15 // client
+	DROPFUNC // client (15)
 	// SUCCESS reply client success
-	SUCCESS Command = 16 // server
+	SUCCESS // server (16)
 	// REMOVEJOB remove a job
-	REMOVEJOB Command = 17 // client
-
+	REMOVEJOB // client (17)
 	// DUMP dump the data
-	DUMP Command = 18 // client
+	DUMP // client (18)
 	// LOAD load data to database
-	LOAD Command = 19 // client
+	LOAD // client (19)
 	// SHUTDOWN shutdown the server
-	SHUTDOWN Command = 20 // client
+	SHUTDOWN // client (20)
 	// BROADCAST broadcast all the worker
-	BROADCAST Command = 21 // worker
-
+	BROADCAST // worker (21)
 	// CONFIGGET get the server config
-	CONFIGGET Command = 22 // client
+	CONFIGGET // client (22)
 	// CONFIGSET set the server config
-	CONFIGSET Command = 23 // client
+	CONFIGSET // client (23)
 	// CONFIG return config to client
-	CONFIG Command = 24 // server
+	CONFIG // server (24)
 	// RUNJOB run job and got a result
-	RUNJOB Command = 25 // client
-
+	RUNJOB // client (25)
 	// ACQUIRED acquire true or false
-	ACQUIRED Command = 26
+	ACQUIRED // (26)
 	// ACQUIRE acquire the lock
-	ACQUIRE Command = 27
+	ACQUIRE // (27)
 	// RELEASE release the lock
-	RELEASE Command = 28
-
+	RELEASE // (28)
 	// NO_WORKER on run job when no worker return this
-	NO_WORKER = 29 // server
+	NO_WORKER // server (29)
 	// DATA run job data
-	DATA = 30 // server
+	DATA // server (30)
+	// RECVDATA receive data
+	RECVDATA // client (31)
+	// WORKDATA worker data
+	WORKDATA // client (32)
+	// JOBASSIGNED job already assigned
+	JOBASSIGNED // worker (33)
 )
 
-// Bytes convert command to byte
+// Bytes convert command to byte slice
 func (c Command) Bytes() []byte {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteByte(byte(c))
-	return buf.Bytes()
+	return []byte{byte(c)}
 }
 
+// String convert command to string for logging and debugging
 func (c Command) String() string {
 	switch c {
 	case NOOP:
@@ -124,6 +124,8 @@ func (c Command) String() string {
 		return "REMOVEJOB"
 	case DUMP:
 		return "DUMP"
+	case LOAD:
+		return "LOAD"
 	case SHUTDOWN:
 		return "SHUTDOWN"
 	case BROADCAST:
@@ -146,6 +148,22 @@ func (c Command) String() string {
 		return "NO_WORKER"
 	case DATA:
 		return "DATA"
+	case RECVDATA:
+		return "RECVDATA"
+	case WORKDATA:
+		return "WORKDATA"
+	case JOBASSIGNED:
+		return "JOBASSIGNED"
+	default:
+		return "UNKNOWN_COMMAND_" + strconv.Itoa(int(c))
 	}
-	panic("Unknow Command " + strconv.Itoa(int(c)))
+}
+
+// FromByte convert byte to Command with basic validation
+func FromByte(b byte) Command {
+	cmd := Command(b)
+	if cmd > JOBASSIGNED || cmd < NOOP {
+		return UNKNOWN
+	}
+	return cmd
 }
