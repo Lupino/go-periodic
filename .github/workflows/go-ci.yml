@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ["1.23", "1.24"]
+        go-version: ["1.25.4"]
         rsa_mode: [Normal, Plain, RSA, AES]
 
     steps:
@@ -27,7 +27,7 @@ jobs:
         run: go test ./...
 
       - name: Pull periodicd
-        run: docker pull lupino/periodicd:1.2.5.0
+        run: docker pull lupino/periodicd:1.2.6.0
 
       - name: Generate RSA keypairs
         if: matrix.rsa_mode != 'Normal'
