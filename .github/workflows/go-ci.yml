@@ -1,0 +1,90 @@
+name: go-ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.23", "1.24"]
+        rsa_mode: [Normal, Plain, RSA, AES]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go-version }}
+          check-latest: true
+          cache: true
+
+      - name: Unit Test
+        run: go test ./...
+
+      - name: Pull periodicd
+        run: docker pull lupino/periodicd:1.2.5.0
+
+      - name: Generate RSA keypairs
+        if: matrix.rsa_mode != 'Normal'
+        run: |
+          set -euo pipefail
+
+          # Generate PKCS#1 keys (BEGIN RSA PRIVATE KEY) for maximum compatibility.
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out client_private.pem
+          openssl rsa -in client_private.pem -traditional -out client_private_pkcs1.pem
+          mv client_private_pkcs1.pem client_private.pem
+          openssl rsa -in client_private.pem -RSAPublicKey_out -out client_public.pem
+
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out server_private.pem
+          openssl rsa -in server_private.pem -traditional -out server_private_pkcs1.pem
+          mv server_private_pkcs1.pem server_private.pem
+          openssl rsa -in server_private.pem -RSAPublicKey_out -out server_public.pem
+
+      - name: Start periodicd (tcp :5000)
+        run: |
+          if [ "${{ matrix.rsa_mode }}" = "Normal" ]; then
+            docker run -d --name periodicd -p 5000:5000 lupino/periodicd:1.2.5.0
+          else
+            docker run -d --name periodicd -p 5000:5000 \
+              -v "$PWD/server_private.pem:/keys/private.pem:ro" \
+              -v "$PWD/client_public.pem:/keys/client_public.pem:ro" \
+              -v "$PWD/server_public.pem:/keys/public.pem:ro" \
+              lupino/periodicd:1.2.5.0 \
+              --rsa-private-path /keys/private.pem \
+              --rsa-public-path /keys/client_public.pem
+          fi
+
+          # wait for port
+          for i in $(seq 1 50); do
+            (echo > /dev/tcp/127.0.0.1/5000) >/dev/null 2>&1 && break
+            sleep 0.2
+          done
+          (echo > /dev/tcp/127.0.0.1/5000)
+
+      - name: Integration Test
+        env:
+          PERIODIC_ADDR: tcp://127.0.0.1:5000
+          PERIODIC_INTEGRATION: "1"
+          PERIODIC_CLIENT_PRIVATE_KEY: client_private.pem
+          PERIODIC_SERVER_PUBLIC_KEY: server_public.pem
+        run: |
+          case "${{ matrix.rsa_mode }}" in
+            Normal) export PERIODIC_RSA_MODE="" ;;
+            Plain)  export PERIODIC_RSA_MODE="0" ;;
+            RSA)    export PERIODIC_RSA_MODE="1" ;;
+            AES)    export PERIODIC_RSA_MODE="2" ;;
+            *)      echo "unknown rsa mode: ${{ matrix.rsa_mode }}"; exit 1 ;;
+          esac
+
+          go test -run TestPeriodic ./...
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker logs periodicd || true
+          docker rm -f periodicd || true

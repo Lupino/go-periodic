@@ -3,6 +3,7 @@ package types
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 )
 
 // Job workload.
@@ -17,49 +18,84 @@ type Job struct {
 
 // NewJob create a job from json bytes
 func NewJob(payload []byte) (job Job, err error) {
-	var h byte
-	h = payload[0]
-	payload = payload[1:]
-	job.Func = string(payload[0:h])
-	payload = payload[h:]
+	need := func(n int, field string) error {
+		if len(payload) < n {
+			return fmt.Errorf("invalid job payload: need %d bytes for %s, got %d", n, field, len(payload))
+		}
+		return nil
+	}
 
-	h = payload[0]
+	if err := need(1, "func length"); err != nil {
+		return job, err
+	}
+	funcLen := int(payload[0])
 	payload = payload[1:]
-	job.Name = string(payload[0:h])
-	payload = payload[h:]
+	if err := need(funcLen, "func"); err != nil {
+		return job, err
+	}
+	job.Func = string(payload[:funcLen])
+	payload = payload[funcLen:]
 
-	h32 := payload[0:4]
+	if err := need(1, "name length"); err != nil {
+		return job, err
+	}
+	nameLen := int(payload[0])
+	payload = payload[1:]
+	if err := need(nameLen, "name"); err != nil {
+		return job, err
+	}
+	job.Name = string(payload[:nameLen])
+	payload = payload[nameLen:]
+
+	if err := need(4, "args length"); err != nil {
+		return job, err
+	}
+	argsLen := int(binary.BigEndian.Uint32(payload[:4]))
 	payload = payload[4:]
-	length := binary.BigEndian.Uint32(h32)
-	if length > 0 {
-		job.Args = string(payload[0:length])
-		payload = payload[length:]
+	if err := need(argsLen, "args"); err != nil {
+		return job, err
+	}
+	if argsLen > 0 {
+		job.Args = string(payload[:argsLen])
+		payload = payload[argsLen:]
 	}
 
-	h64 := payload[0:8]
+	if err := need(8, "schedAt"); err != nil {
+		return job, err
+	}
+	job.SchedAt = int64(binary.BigEndian.Uint64(payload[:8]))
 	payload = payload[8:]
-	job.SchedAt = int64(binary.BigEndian.Uint64(h64))
 
-	var ver byte
-
-	ver = payload[0]
-
+	if err := need(1, "version"); err != nil {
+		return job, err
+	}
+	ver := payload[0]
 	payload = payload[1:]
 
-	if ver == 1 {
-		h32 = payload[0:4]
-		job.Counter = int32(binary.BigEndian.Uint32(h32))
-	} else if ver == 2 {
-		h32 = payload[0:4]
-		job.Timeout = int32(binary.BigEndian.Uint32(h32))
-	} else if ver == 3 {
-		h32 = payload[0:4]
-		job.Counter = int32(binary.BigEndian.Uint32(h32))
-		h32 = payload[4:8]
-		job.Timeout = int32(binary.BigEndian.Uint32(h32))
+	switch ver {
+	case 0:
+		return job, nil
+	case 1:
+		if err := need(4, "counter"); err != nil {
+			return job, err
+		}
+		job.Counter = int32(binary.BigEndian.Uint32(payload[:4]))
+	case 2:
+		if err := need(4, "timeout"); err != nil {
+			return job, err
+		}
+		job.Timeout = int32(binary.BigEndian.Uint32(payload[:4]))
+	case 3:
+		if err := need(8, "counter+timeout"); err != nil {
+			return job, err
+		}
+		job.Counter = int32(binary.BigEndian.Uint32(payload[:4]))
+		job.Timeout = int32(binary.BigEndian.Uint32(payload[4:8]))
+	default:
+		return job, fmt.Errorf("invalid job payload: unknown version %d", ver)
 	}
 
-	return
+	return job, nil
 }
 
 // Bytes encode job to json bytes
