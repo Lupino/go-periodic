@@ -19,24 +19,39 @@ import (
 // Client defines the base client.
 type Client struct {
 	// Use sync.Map for high-concurrency agent management.
-	agents      sync.Map
+	agents      *sync.Map
 	conn        protocol.Conn
 	// Use atomic.Bool for lock-free state checks.
-	alive       atomic.Bool
-	agentLastId uint32
+	alive       *atomic.Bool
+	agentLastID *uint32
 	processTask func(string, []byte)
 }
 
 // NewClient creates a new client.
 func NewClient() *Client {
-	return new(Client)
+	c := new(Client)
+	c.ensureState()
+	return c
+}
+
+func (c *Client) ensureState() {
+	if c.agents == nil {
+		c.agents = &sync.Map{}
+	}
+	if c.alive == nil {
+		c.alive = &atomic.Bool{}
+	}
+	if c.agentLastID == nil {
+		c.agentLastID = new(uint32)
+	}
 }
 
 // initClient initializes the base client.
 func (c *Client) initClient(conn net.Conn, clientType protocol.ClientType) {
-	c.agents = sync.Map{} // Re-initialize the sync.Map
-	c.alive.Store(true)   // Set alive state atomically
-	c.agentLastId = 0
+	c.ensureState()
+	c.agents = &sync.Map{} // Re-initialize the sync.Map
+	c.alive.Store(true)    // Set alive state atomically
+	atomic.StoreUint32(c.agentLastID, 0)
 	c.conn = protocol.NewClientConn(conn)
 	c.conn.Send(clientType.Bytes())
 	c.conn.Receive()
@@ -45,10 +60,13 @@ func (c *Client) initClient(conn net.Conn, clientType protocol.ClientType) {
 // Clone clones the base client.
 // Note: It continues to share the same underlying connection and agents.
 func (c *Client) Clone() *Client {
+	c.ensureState()
 	var c1 = new(Client)
 	c1.agents = c.agents
 	c1.alive = c.alive
+	c1.agentLastID = c.agentLastID
 	c1.conn = c.conn
+	c1.processTask = c.processTask
 	return c1
 }
 
@@ -65,10 +83,10 @@ func (c *Client) newAgent() *Agent {
 
 	for i := 0; i < 0xFFFF0000; i++ {
 		// Atomically increment the last ID.
-		newID := atomic.AddUint32(&c.agentLastId, 1)
+		newID := atomic.AddUint32(c.agentLastID, 1)
 
 		if newID > 0xFFFF0000 {
-			atomic.StoreUint32(&c.agentLastId, 1)
+			atomic.StoreUint32(c.agentLastID, 1)
 			newID = 1
 		}
 
@@ -144,6 +162,9 @@ func (c *Client) checkHealth() {
 // Connect to a periodic server.
 func (c *Client) Connect(addr string, args ...protocol.RSAConnParam) error {
 	parts := strings.SplitN(addr, "://", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("invalid address %q, expected format network://address", addr)
+	}
 	conn, err := net.Dial(parts[0], parts[1])
 	if err != nil {
 		return err
