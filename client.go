@@ -30,6 +30,8 @@ type Client struct {
 	processTask    func(string, []byte)
 	afterReconnect func()
 	clientType     protocol.ClientType
+	readTimeout    time.Duration
+	writeTimeout   time.Duration
 	connectNetwork string
 	connectAddress string
 	connectRSA     *protocol.RSAConnParam
@@ -64,19 +66,32 @@ func (c *Client) ensureState() {
 	if c.clientType == 0 {
 		c.clientType = protocol.TYPECLIENT
 	}
+	if c.readTimeout <= 0 {
+		c.readTimeout = 30 * time.Second
+	}
+	if c.writeTimeout <= 0 {
+		c.writeTimeout = 10 * time.Second
+	}
 }
 
 // initClient initializes the base client.
-func (c *Client) initClient(conn net.Conn, clientType protocol.ClientType) {
+func (c *Client) initClient(conn net.Conn, clientType protocol.ClientType) error {
 	c.ensureState()
 	c.agents = &sync.Map{} // Re-initialize the sync.Map
-	c.alive.Store(true)    // Set alive state atomically
 	atomic.StoreUint32(c.agentLastID, 0)
 	clientConn := protocol.NewClientConn(conn)
-	clientConn.Send(clientType.Bytes())
-	clientConn.Receive()
+	clientConn.ReadTimeout = c.readTimeout
+	clientConn.WriteTimeout = c.writeTimeout
+	if err := clientConn.Send(clientType.Bytes()); err != nil {
+		return err
+	}
+	if _, err := clientConn.Receive(); err != nil {
+		return err
+	}
 	c.setConn(clientConn)
+	c.alive.Store(true) // Set alive state atomically
 	c.closed.Store(false)
+	return nil
 }
 
 // Clone clones the base client.
@@ -94,10 +109,24 @@ func (c *Client) Clone() *Client {
 	c1.processTask = c.processTask
 	c1.afterReconnect = c.afterReconnect
 	c1.clientType = c.clientType
+	c1.readTimeout = c.readTimeout
+	c1.writeTimeout = c.writeTimeout
 	c1.connectNetwork = c.connectNetwork
 	c1.connectAddress = c.connectAddress
 	c1.connectRSA = c.connectRSA
 	return c1
+}
+
+// SetIOTimeout sets read/write timeout for connection I/O.
+// Zero or negative values keep current settings unchanged.
+func (c *Client) SetIOTimeout(readTimeout, writeTimeout time.Duration) {
+	c.ensureState()
+	if readTimeout > 0 {
+		c.readTimeout = readTimeout
+	}
+	if writeTimeout > 0 {
+		c.writeTimeout = writeTimeout
+	}
 }
 
 func (c *Client) setConn(conn protocol.Conn) {
@@ -169,7 +198,11 @@ func (c *Client) sendCommandAndReceive(cmd protocol.Command, data []byte) (proto
 func (c *Client) sendCommand(cmd protocol.Command, data []byte) {
 	agent := c.newAgent()
 	defer c.removeAgent(agent.ID)
-	agent.Send(cmd, data)
+	if err := agent.Send(cmd, data); err != nil {
+		if c.alive.Load() && !c.closed.Load() {
+			c.tryReconnect(err)
+		}
+	}
 }
 
 // receiveLoop listens for incoming data and dispatches to agents.
@@ -242,9 +275,15 @@ func (c *Client) dialAndInit() error {
 			_ = conn.Close()
 			return err
 		}
-		c.initClient(rsaConn, c.clientType)
+		if err := c.initClient(rsaConn, c.clientType); err != nil {
+			_ = conn.Close()
+			return err
+		}
 	} else {
-		c.initClient(conn, c.clientType)
+		if err := c.initClient(conn, c.clientType); err != nil {
+			_ = conn.Close()
+			return err
+		}
 	}
 	return nil
 }
@@ -270,23 +309,44 @@ func (c *Client) tryReconnect(cause error) {
 	}
 	defer c.reconnecting.Store(false)
 
+	reconnectStartedAt := time.Now()
+	reconnectTarget := fmt.Sprintf("%s://%s", c.connectNetwork, c.connectAddress)
+	log.Printf("Reconnect started: target=%s, cause=%v\n", reconnectTarget, cause)
+
 	c.failAgents(cause)
 	c.closeConn()
 
 	wait := time.Second
+	retryCount := 0
 	for c.alive.Load() && !c.closed.Load() {
+		retryCount++
 		if err := c.dialAndInit(); err == nil {
 			go c.receiveLoop()
 			if c.afterReconnect != nil {
 				c.afterReconnect()
 			}
+			log.Printf(
+				"Reconnect succeeded: target=%s, retry_count=%d, elapsed=%s\n",
+				reconnectTarget, retryCount, time.Since(reconnectStartedAt).Round(time.Millisecond),
+			)
 			return
+		} else {
+			log.Printf(
+				"Reconnect attempt failed: target=%s, retry_count=%d, backoff=%s, err=%v\n",
+				reconnectTarget, retryCount, wait, err,
+			)
 		}
 		time.Sleep(wait)
 		if wait < 10*time.Second {
 			wait *= 2
 		}
 	}
+
+	log.Printf(
+		"Reconnect aborted: target=%s, retry_count=%d, elapsed=%s, alive=%t, closed=%t\n",
+		reconnectTarget, retryCount, time.Since(reconnectStartedAt).Round(time.Millisecond),
+		c.alive.Load(), c.closed.Load(),
+	)
 }
 
 // Connect to a periodic server.

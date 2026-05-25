@@ -40,7 +40,11 @@ func NewWorker(size int) *Worker {
 	w.processTask = func(msgId string, data []byte) {
 		// Create a specific agent for this job assignment.
 		agent := NewAgent(w.getConn(), []byte(msgId))
-		agent.Send(protocol.JOBASSIGNED, nil)
+		if err := agent.SendNoWait(protocol.JOBASSIGNED, nil); err != nil {
+			log.Printf("send JOBASSIGNED failed: %v\n", err)
+			w.tryReconnect(err)
+			return
+		}
 
 		job, err := NewJob(w, data)
 		if err != nil {
@@ -52,14 +56,22 @@ func NewWorker(size int) *Worker {
 			task := taskVal.(workerTask)
 			w.wp.Submit(func() {
 				// Signal server to grab another job after this one is assigned.
-				defer agent.Send(protocol.GRABJOB, nil)
+				defer func() {
+					if err := agent.SendNoWait(protocol.GRABJOB, nil); err != nil {
+						log.Printf("send GRABJOB failed: %v\n", err)
+						w.tryReconnect(err)
+					}
+				}()
 				task.run(job)
 			})
 		} else {
 			// If the function is not found locally, tell the server we can't do it.
-			w.RemoveFunc(job.FuncName)
+			_ = w.RemoveFunc(job.FuncName)
 			job.Fail()
-			agent.Send(protocol.GRABJOB, nil)
+			if err := agent.SendNoWait(protocol.GRABJOB, nil); err != nil {
+				log.Printf("send GRABJOB failed: %v\n", err)
+				w.tryReconnect(err)
+			}
 		}
 	}
 
@@ -84,20 +96,33 @@ func (w *Worker) restoreRegistrations() {
 	w.tasks.Range(func(key, value interface{}) bool {
 		funcName := key.(string)
 		task := value.(workerTask)
-		cmd := protocol.CANDO
-		if task.broadcast {
-			cmd = protocol.BROADCAST
-		}
-		ret, data, err := w.sendCommandAndReceive(cmd, encode8(funcName))
-		if err != nil {
-			log.Printf("restore func %s failed: %v\n", funcName, err)
-			return true
-		}
-		if ret != protocol.SUCCESS {
-			log.Printf("restore func %s rejected: %s\n", funcName, data)
-		}
+		w.restoreRegistrationWithRetry(funcName, task)
 		return true
 	})
+}
+
+func (w *Worker) restoreRegistrationWithRetry(funcName string, task workerTask) {
+	cmd := protocol.CANDO
+	if task.broadcast {
+		cmd = protocol.BROADCAST
+	}
+
+	wait := time.Second
+	for w.alive.Load() && !w.closed.Load() {
+		ret, data, err := w.sendCommandAndReceive(cmd, encode8(funcName))
+		if err == nil && ret == protocol.SUCCESS {
+			return
+		}
+		if err != nil {
+			log.Printf("restore func %s failed: %v\n", funcName, err)
+		} else {
+			log.Printf("restore func %s rejected: %s\n", funcName, data)
+		}
+		time.Sleep(wait)
+		if wait < 10*time.Second {
+			wait *= 2
+		}
+	}
 }
 
 // encode8 encodes a string into a length-prefixed byte slice.
@@ -177,7 +202,10 @@ func (w *Worker) Work() {
 			agent := w.agentQueue.PopFront()
 			w.agentQueue.PushBack(agent)
 			w.agentQueueMu.Unlock()
-			agent.Send(protocol.GRABJOB, nil)
+			if err := agent.SendNoWait(protocol.GRABJOB, nil); err != nil {
+				log.Printf("send GRABJOB failed: %v\n", err)
+				w.tryReconnect(err)
+			}
 		}
 
 		select {

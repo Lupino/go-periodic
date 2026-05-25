@@ -2,8 +2,8 @@ package periodic
 
 import (
 	"os"
-	"strings"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 

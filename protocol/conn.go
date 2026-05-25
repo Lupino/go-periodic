@@ -7,6 +7,7 @@ import (
 	"hash/crc32"
 	"net"
 	"sync"
+	"time"
 )
 
 var (
@@ -25,6 +26,8 @@ type Conn struct {
 	net.Conn
 	RequestMagic  []byte
 	ResponseMagic []byte
+	ReadTimeout   time.Duration
+	WriteTimeout  time.Duration
 	wlocker       *sync.RWMutex
 	rlocker       *sync.RWMutex
 }
@@ -50,6 +53,10 @@ func NewClientConn(conn net.Conn) Conn {
 func (conn *Conn) Receive() (rdata []byte, rerr error) {
 	conn.rlocker.RLock()
 	defer conn.rlocker.RUnlock()
+	if conn.ReadTimeout > 0 {
+		_ = conn.Conn.SetReadDeadline(time.Now().Add(conn.ReadTimeout))
+		defer conn.Conn.SetReadDeadline(time.Time{})
+	}
 
 	// Read magic
 	magic, err := conn.receive(4)
@@ -106,6 +113,10 @@ func (conn *Conn) receive(length uint32) ([]byte, error) {
 func (conn *Conn) Send(data []byte) error {
 	conn.wlocker.Lock()
 	defer conn.wlocker.Unlock()
+	if conn.WriteTimeout > 0 {
+		_ = conn.Conn.SetWriteDeadline(time.Now().Add(conn.WriteTimeout))
+		defer conn.Conn.SetWriteDeadline(time.Time{})
+	}
 	var header = make([]byte, 4)
 	binary.BigEndian.PutUint32(header, uint32(len(data)))
 

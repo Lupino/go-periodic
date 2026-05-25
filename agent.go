@@ -2,6 +2,7 @@ package periodic
 
 import (
 	"github.com/Lupino/go-periodic/protocol"
+	"log"
 	"sync/atomic"
 )
 
@@ -33,21 +34,28 @@ func NewAgent(conn protocol.Conn, ID []byte) *Agent {
 	return agent
 }
 
-// Send command and data to the server using a single memory allocation.
-func (a *Agent) Send(cmd protocol.Command, data []byte) error {
+func (a *Agent) buildPacket(cmd protocol.Command, data []byte) []byte {
 	idLen := len(a.ID)
-	// Pre-allocate the exact size needed: ID + Command(1 byte) + Data
 	packet := make([]byte, idLen+1+len(data))
-
 	copy(packet[0:idLen], a.ID)
 	packet[idLen] = byte(cmd)
 	if len(data) > 0 {
 		copy(packet[idLen+1:], data)
 	}
+	return packet
+}
 
+// Send command and data to the server using a single memory allocation.
+func (a *Agent) Send(cmd protocol.Command, data []byte) error {
 	// Set waiting state atomically before sending
 	a.isWaiting.Store(true)
-	return a.conn.Send(packet)
+	return a.conn.Send(a.buildPacket(cmd, data))
+}
+
+// SendNoWait sends a command that does not expect a direct response.
+func (a *Agent) SendNoWait(cmd protocol.Command, data []byte) error {
+	a.isWaiting.Store(false)
+	return a.conn.Send(a.buildPacket(cmd, data))
 }
 
 // Receive blocks until a command or data is received for this agent.
@@ -58,8 +66,6 @@ func (a *Agent) Receive() (cmd protocol.Command, data []byte, err error) {
 		return protocol.UNKNOWN, nil, nil
 	}
 
-	// Reset waiting state atomically
-	a.isWaiting.Store(false)
 	return packet.cmd, packet.data, packet.err
 }
 
@@ -69,11 +75,20 @@ func (a *Agent) FeedCommand(cmd protocol.Command, dat []byte) {
 	if a.isClosed.Load() {
 		return
 	}
+	if !a.isWaiting.Load() {
+		return
+	}
 
-	a.reader <- agentPacket{
+	packet := agentPacket{
 		cmd:  cmd,
 		data: dat,
 		err:  nil,
+	}
+	select {
+	case a.reader <- packet:
+	default:
+		// Never block the shared receive loop because one agent channel is congested.
+		log.Printf("agent %x command channel full, drop cmd=%s\n", a.ID, cmd.String())
 	}
 }
 
@@ -84,9 +99,15 @@ func (a *Agent) FeedError(err error) {
 		return // Already handled
 	}
 
-	a.reader <- agentPacket{
+	packet := agentPacket{
 		cmd:  protocol.UNKNOWN,
 		data: nil,
 		err:  err,
+	}
+	select {
+	case a.reader <- packet:
+	default:
+		// Avoid blocking reconnect path if receiver is not draining the channel.
+		log.Printf("agent %x error channel full, drop err=%v\n", a.ID, err)
 	}
 }
