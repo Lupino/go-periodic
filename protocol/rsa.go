@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/pem"
@@ -27,9 +29,16 @@ const (
 )
 
 const (
-	aesKeySize = 32
-	aesIvSize  = 16
-	oaepSize   = 66 // SHA256 overhead
+	aesKeySize       = 32
+	aesIvSize        = 16
+	aesTagSize       = 32
+	oaepSize         = 66 // SHA256 overhead
+	nonceSize        = 16
+	fpSize           = 32
+	maxRSAPacketSize = 64 * 1024 * 1024
+
+	serverProofDomain = "metro-rsa-server-v1"
+	clientProofDomain = "metro-rsa-client-v1"
 )
 
 type RSAConn struct {
@@ -109,6 +118,14 @@ func NewClientRSAConn(conn net.Conn, param RSAConnParam) (*RSAConn, error) {
 
 // NewServerRSAConn creates a server connection
 func NewServerRSAConn(conn net.Conn, privKeyPath, authorizedKeysDir string) (*RSAConn, error) {
+	return newServerRSAConn(conn, privKeyPath, authorizedKeysDir, []int{ModeRSA, ModeAES})
+}
+
+func NewServerRSAConnUnsafePlain(conn net.Conn, privKeyPath, authorizedKeysDir string) (*RSAConn, error) {
+	return newServerRSAConn(conn, privKeyPath, authorizedKeysDir, []int{ModePlain, ModeRSA, ModeAES})
+}
+
+func newServerRSAConn(conn net.Conn, privKeyPath, authorizedKeysDir string, allowedModes []int) (*RSAConn, error) {
 	privKey, err := loadPrivateKey(privKeyPath)
 	if err != nil {
 		return nil, err
@@ -146,6 +163,9 @@ func NewServerRSAConn(conn net.Conn, privKeyPath, authorizedKeysDir string) (*RS
 	reqMode := int(modeBytes[0])
 	switch reqMode {
 	case ModePlain, ModeRSA, ModeAES:
+		if !modeAllowed(reqMode, allowedModes) {
+			return nil, fmt.Errorf("received mode not allowed by server policy: %d", reqMode)
+		}
 		rc.mode = reqMode
 	default:
 		return nil, fmt.Errorf("received invalid mode from client: %d", reqMode)
@@ -230,11 +250,12 @@ func (c *RSAConn) recvDataAES() ([]byte, error) {
 	if _, err := io.ReadFull(c.Conn, lenBuf); err != nil {
 		return nil, err
 	}
-	pktLen := int(binary.BigEndian.Uint64(lenBuf))
+	pktLen64 := binary.BigEndian.Uint64(lenBuf)
 
-	if pktLen < aesIvSize || pktLen > 100*1024*1024 {
-		return nil, fmt.Errorf("invalid packet length: %d", pktLen)
+	if pktLen64 < aesIvSize+aesTagSize || pktLen64 > maxRSAPacketSize {
+		return nil, fmt.Errorf("invalid packet length: %d", pktLen64)
 	}
+	pktLen := int(pktLen64)
 
 	payload := make([]byte, pktLen)
 	if _, err := io.ReadFull(c.Conn, payload); err != nil {
@@ -242,7 +263,12 @@ func (c *RSAConn) recvDataAES() ([]byte, error) {
 	}
 
 	iv := payload[:aesIvSize]
-	ciphertext := payload[aesIvSize:]
+	ciphertext := payload[aesIvSize : len(payload)-aesTagSize]
+	tag := payload[len(payload)-aesTagSize:]
+	expectedTag := hmacSHA256(c.sessionKey, append(append([]byte{}, iv...), ciphertext...))
+	if subtle.ConstantTimeCompare(tag, expectedTag) != 1 {
+		return nil, errors.New("invalid AES packet authentication tag")
+	}
 
 	block, err := aes.NewCipher(c.sessionKey)
 	if err != nil {
@@ -273,7 +299,11 @@ func (c *RSAConn) sendDataAES(data []byte) error {
 	ciphertext := make([]byte, len(data))
 	stream.XORKeyStream(ciphertext, data)
 
-	payload := append(iv, ciphertext...)
+	tag := hmacSHA256(c.sessionKey, append(append([]byte{}, iv...), ciphertext...))
+	payload := append(append(append([]byte{}, iv...), ciphertext...), tag...)
+	if len(payload) > maxRSAPacketSize {
+		return errors.New("AES packet length exceeds maximum")
+	}
 	lenBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(lenBuf, uint64(len(payload)))
 
@@ -330,11 +360,23 @@ func (c *RSAConn) sendDataOAEP(data []byte) error {
 
 func (c *RSAConn) clientHandshake() error {
 	fp := publicKeyFingerprint(&c.privateKey.PublicKey)
-	if err := c.sendDataOAEP(fp); err != nil {
+	nonce := make([]byte, nonceSize)
+	if _, err := rand.Read(nonce); err != nil {
+		return err
+	}
+	if err := c.sendDataOAEP(append(append([]byte{}, fp...), nonce...)); err != nil {
 		return err
 	}
 
 	serverFp, err := c.recvDataOAEP()
+	if err != nil {
+		return err
+	}
+	serverProof, err := c.recvDataOAEP()
+	if err != nil {
+		return err
+	}
+	serverChallenge, err := c.recvDataOAEP()
 	if err != nil {
 		return err
 	}
@@ -343,14 +385,27 @@ func (c *RSAConn) clientHandshake() error {
 	if !bytes.Equal(serverFp, expectedFp) {
 		return fmt.Errorf("server fingerprint mismatch")
 	}
+	expectedProof := handshakeHash([]byte(serverProofDomain), nonce, serverFp)
+	if subtle.ConstantTimeCompare(serverProof, expectedProof) != 1 {
+		return fmt.Errorf("server proof mismatch")
+	}
+	clientProof := handshakeHash([]byte(clientProofDomain), serverChallenge, fp)
+	if err := c.sendDataOAEP(clientProof); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (c *RSAConn) serverHandshake(allowedKeys []*rsa.PublicKey) (*rsa.PublicKey, error) {
-	clientFp, err := c.recvDataOAEP()
+	hello, err := c.recvDataOAEP()
 	if err != nil {
 		return nil, err
 	}
+	if len(hello) != fpSize+nonceSize {
+		return nil, errors.New("invalid client hello length")
+	}
+	clientFp := hello[:fpSize]
+	nonce := hello[fpSize:]
 
 	var matchedKey *rsa.PublicKey
 	for _, key := range allowedKeys {
@@ -366,8 +421,26 @@ func (c *RSAConn) serverHandshake(allowedKeys []*rsa.PublicKey) (*rsa.PublicKey,
 
 	c.peerPub = matchedKey
 	myFp := publicKeyFingerprint(&c.privateKey.PublicKey)
+	challenge := make([]byte, nonceSize)
+	if _, err := rand.Read(challenge); err != nil {
+		return nil, err
+	}
 	if err := c.sendDataOAEP(myFp); err != nil {
 		return nil, err
+	}
+	if err := c.sendDataOAEP(handshakeHash([]byte(serverProofDomain), nonce, myFp)); err != nil {
+		return nil, err
+	}
+	if err := c.sendDataOAEP(challenge); err != nil {
+		return nil, err
+	}
+	clientProof, err := c.recvDataOAEP()
+	if err != nil {
+		return nil, err
+	}
+	expectedProof := handshakeHash([]byte(clientProofDomain), challenge, clientFp)
+	if subtle.ConstantTimeCompare(clientProof, expectedProof) != 1 {
+		return nil, errors.New("client proof verification failed")
 	}
 
 	return matchedKey, nil
@@ -381,6 +454,29 @@ func publicKeyFingerprint(pub *rsa.PublicKey) []byte {
 	der := x509.MarshalPKCS1PublicKey(pub)
 	h := sha256.Sum256(der)
 	return h[:]
+}
+
+func handshakeHash(parts ...[]byte) []byte {
+	h := sha256.New()
+	for _, part := range parts {
+		h.Write(part)
+	}
+	return h.Sum(nil)
+}
+
+func hmacSHA256(key, data []byte) []byte {
+	mac := hmac.New(sha256.New, key)
+	mac.Write(data)
+	return mac.Sum(nil)
+}
+
+func modeAllowed(mode int, allowed []int) bool {
+	for _, v := range allowed {
+		if mode == v {
+			return true
+		}
+	}
+	return false
 }
 
 func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
