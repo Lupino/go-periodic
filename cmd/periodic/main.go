@@ -19,6 +19,13 @@ func getRSAParam(c *cli.Context) protocol.RSAConnParam {
 	}
 }
 
+func getClientAuth(c *cli.Context) protocol.ClientAuth {
+	return protocol.ClientAuth{
+		Name:  c.GlobalString("client-name"),
+		Token: c.GlobalString("client-token"),
+	}
+}
+
 func main() {
 	app := cli.NewApp()
 	app.Name = "periodic"
@@ -49,13 +56,25 @@ func main() {
 			Usage:  "RSA Transport mode",
 			EnvVar: "RSA_MODE",
 		},
+		cli.StringFlag{
+			Name:   "client-name",
+			Value:  "",
+			Usage:  "Authenticated periodic client name",
+			EnvVar: "PERIODIC_CLIENT_NAME",
+		},
+		cli.StringFlag{
+			Name:   "client-token",
+			Value:  "",
+			Usage:  "Authenticated periodic client token",
+			EnvVar: "PERIODIC_CLIENT_TOKEN",
+		},
 	}
 	app.Commands = []cli.Command{
 		{
 			Name:  "status",
 			Usage: "Show status",
 			Action: func(c *cli.Context) error {
-				subcmd.ShowStatus(c.GlobalString("H"), getRSAParam(c))
+				subcmd.ShowStatus(c.GlobalString("H"), getRSAParam(c), getClientAuth(c))
 				return nil
 			},
 		},
@@ -98,7 +117,7 @@ func main() {
 				var now = time.Now()
 				var schedAt = int64(now.Unix()) + int64(delay)
 				opts["schedat"] = schedAt
-				subcmd.SubmitJob(c.GlobalString("H"), getRSAParam(c), funcName, name, opts)
+				subcmd.SubmitJob(c.GlobalString("H"), getRSAParam(c), funcName, name, opts, getClientAuth(c))
 				return nil
 			},
 		},
@@ -124,7 +143,7 @@ func main() {
 					cli.ShowCommandHelp(c, "remove")
 					log.Fatal("Job name and func is require")
 				}
-				subcmd.RemoveJob(c.GlobalString("H"), getRSAParam(c), funcName, name)
+				subcmd.RemoveJob(c.GlobalString("H"), getRSAParam(c), funcName, name, getClientAuth(c))
 				return nil
 			},
 		},
@@ -144,7 +163,7 @@ func main() {
 					cli.ShowCommandHelp(c, "drop")
 					log.Fatal("function name is required")
 				}
-				subcmd.DropFunc(c.GlobalString("H"), getRSAParam(c), Func)
+				subcmd.DropFunc(c.GlobalString("H"), getRSAParam(c), Func, getClientAuth(c))
 				return nil
 			},
 		},
@@ -180,7 +199,7 @@ func main() {
 					cli.ShowCommandHelp(c, "run")
 					log.Fatal("command is required")
 				}
-				subcmd.Run(c.GlobalString("H"), getRSAParam(c), Func, exec, n)
+				subcmd.Run(c.GlobalString("H"), getRSAParam(c), Func, exec, n, getClientAuth(c))
 				return nil
 			},
 		},

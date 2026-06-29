@@ -50,6 +50,8 @@ Request:
 	                    #   Name             Type
 	                    1   TYPE_CLIENT      Client
 	                    2   TYPE_WORKER      Worker
+	                    3   TYPE_AUTH_CLIENT Authenticated client
+	                    4   TYPE_AUTH_WORKER Authenticated worker
 
 Response:
 

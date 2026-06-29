@@ -35,6 +35,7 @@ type Client struct {
 	connectNetwork string
 	connectAddress string
 	connectRSA     *protocol.RSAConnParam
+	clientAuth     *protocol.ClientAuth
 }
 
 // NewClient creates a new client.
@@ -82,7 +83,11 @@ func (c *Client) initClient(conn net.Conn, clientType protocol.ClientType) error
 	clientConn := protocol.NewClientConn(conn)
 	clientConn.ReadTimeout = c.readTimeout
 	clientConn.WriteTimeout = c.writeTimeout
-	if err := clientConn.Send(clientType.Bytes()); err != nil {
+	registration, err := clientType.RegistrationBytes(c.clientAuth)
+	if err != nil {
+		return err
+	}
+	if err := clientConn.Send(registration); err != nil {
 		return err
 	}
 	if _, err := clientConn.Receive(); err != nil {
@@ -114,7 +119,23 @@ func (c *Client) Clone() *Client {
 	c1.connectNetwork = c.connectNetwork
 	c1.connectAddress = c.connectAddress
 	c1.connectRSA = c.connectRSA
+	c1.clientAuth = c.clientAuth
 	return c1
+}
+
+// SetAuth configures the authenticated client identity used during registration.
+// Passing empty name and token clears the identity.
+func (c *Client) SetAuth(name, token string) error {
+	c.ensureState()
+	if name == "" && token == "" {
+		c.clientAuth = nil
+		return nil
+	}
+	if name == "" || token == "" {
+		return fmt.Errorf("auth name and token must be provided together")
+	}
+	c.clientAuth = &protocol.ClientAuth{Name: name, Token: token}
+	return nil
 }
 
 // SetIOTimeout sets read/write timeout for connection I/O.

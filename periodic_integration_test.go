@@ -49,6 +49,7 @@ func getenvDefault(key, fallback string) string {
 func mustConnectClient(t *testing.T, addr string, args ...protocol.RSAConnParam) *Client {
 	t.Helper()
 	c := NewClient()
+	setAuthFromEnv(t, c, "PERIODIC_CLIENT_NAME", "PERIODIC_CLIENT_TOKEN")
 	if err := c.Connect(addr, args...); err != nil {
 		t.Fatalf("connect client: %v", err)
 	}
@@ -58,13 +59,29 @@ func mustConnectClient(t *testing.T, addr string, args ...protocol.RSAConnParam)
 func mustConnectWorker(t *testing.T, size int, addr string, args ...protocol.RSAConnParam) *Worker {
 	t.Helper()
 	w := NewWorker(size)
+	setAuthFromEnv(t, &w.Client, "PERIODIC_WORKER_NAME", "PERIODIC_WORKER_TOKEN")
 	if err := w.Connect(addr, args...); err != nil {
 		t.Fatalf("connect worker: %v", err)
 	}
 	return w
 }
 
+func setAuthFromEnv(t *testing.T, c *Client, nameKey, tokenKey string) {
+	t.Helper()
+	name := os.Getenv(nameKey)
+	token := os.Getenv(tokenKey)
+	if name == "" && token == "" {
+		return
+	}
+	if err := c.SetAuth(name, token); err != nil {
+		t.Fatalf("set auth from %s/%s: %v", nameKey, tokenKey, err)
+	}
+}
+
 func uniqueName(prefix string) string {
+	if os.Getenv("PERIODIC_STATIC_FUNC_NAMES") == "1" {
+		return prefix
+	}
 	return prefix + "_" + strconv.FormatInt(time.Now().UnixNano(), 10)
 }
 

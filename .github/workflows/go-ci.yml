@@ -88,3 +88,58 @@ jobs:
         run: |
           docker logs periodicd || true
           docker rm -f periodicd || true
+
+  auth-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.4"
+          check-latest: true
+          cache: true
+
+      - name: Unit Test
+        run: go test ./...
+
+      - name: Pull periodicd
+        run: docker pull lupino/periodicd:1.2.9.0
+
+      - name: Write auth file
+        run: |
+          cat > periodic-auth.txt <<EOF
+          client client-a token-client-a test_submit,test_no_worker,test_worker,test_reconnect
+          worker worker-a token-worker-a test_worker,test_reconnect
+          EOF
+
+      - name: Start periodicd (tcp :5000)
+        run: |
+          docker run -d --name periodicd -p 5000:5000 \
+            -v "$PWD/periodic-auth.txt:/keys/periodic-auth.txt:ro" \
+            lupino/periodicd:1.2.9.0 \
+            --auth-file /keys/periodic-auth.txt
+
+          for i in $(seq 1 50); do
+            (echo > /dev/tcp/127.0.0.1/5000) >/dev/null 2>&1 && break
+            sleep 0.2
+          done
+          (echo > /dev/tcp/127.0.0.1/5000)
+
+      - name: Integration Test with client auth
+        env:
+          PERIODIC_ADDR: tcp://127.0.0.1:5000
+          PERIODIC_INTEGRATION: "1"
+          PERIODIC_CLIENT_NAME: client-a
+          PERIODIC_CLIENT_TOKEN: token-client-a
+          PERIODIC_WORKER_NAME: worker-a
+          PERIODIC_WORKER_TOKEN: token-worker-a
+          PERIODIC_STATIC_FUNC_NAMES: "1"
+        run: go test -run TestPeriodic ./...
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker logs periodicd || true
+          docker rm -f periodicd || true

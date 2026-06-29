@@ -14,8 +14,13 @@ import (
 )
 
 // Run cli run
-func Run(entryPoint string, param protocol.RSAConnParam, funcName, cmd string, n int) {
+func Run(entryPoint string, param protocol.RSAConnParam, funcName, cmd string, n int, auth ...protocol.ClientAuth) {
 	w := periodic.NewWorker(n)
+	if len(auth) > 0 {
+		if err := w.SetAuth(auth[0].Name, auth[0].Token); err != nil {
+			log.Fatal(err)
+		}
+	}
 	if err := w.Connect(entryPoint, param); err != nil {
 		log.Fatalf("Error: %s\n", err.Error())
 	}
